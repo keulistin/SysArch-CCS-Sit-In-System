@@ -1,0 +1,504 @@
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+
+    /* Global Styles */
+    body {
+        font-family: 'Poppins', sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f2e6f7;
+        overflow: hidden;
+
+    }
+
+    /* Navbar */
+    .navbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: white;
+        height: 65px;
+        padding: 15px 30px;
+        box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .left-nav {
+        display: flex;
+    }
+
+    .logo {
+        display: flex;
+        align-items: center;
+    }
+
+    .logo img{
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        align-items: center;
+    }
+
+    .nav-links {
+        list-style: none;
+        display: flex;
+        gap: 20px;
+        padding: 20px 20px;
+    }
+
+    .nav-links li a {
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 14px;
+        color: black;
+    }
+
+    .nav-links .active {
+        font-weight:bolder;
+        color: #5F3A74;
+    }
+
+    .user-section {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    #notif-icon {
+        width: 30px;
+        height: 30px;
+    }
+
+    .profile-pic {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+    }
+
+    #logoutBtn {
+        background-color: #5F3A74;
+        color: white;
+        border-radius: 50px;
+        padding: 8px 16px;
+        border: none;
+        cursor: pointer; /* Ensures clickable behavior */
+    }
+
+ 
+  
+
+    /* CONTENT */
+
+    .content {
+        padding: 2% 17%;
+    }
+
+
+    /*  ANNOUNCEMENT    */
+
+    /* Announcement Container */
+    .announcement-container {
+        padding: 20px;
+    }
+
+    /* Add Announcement Button */
+    .add-announcement-btn {
+        background-color: #6b3e75;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        font-size: 16px;
+        border-radius: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Announcement List */
+    .announcement-list {
+        margin-top: 15px;
+        max-height: 430px;  /* Adjust as needed */
+        overflow-y: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Announcement Item */
+    .announcement-item {
+        background: #F1E6EF;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        border-left: 2px solid #5F3A74;
+    }
+
+    /* Announcement Title */
+    .announcement-item h3 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    /* Announcement Content */
+    .announcement-item p {
+        font-size: 14px;
+        color: #333;
+        margin: 5px 0;
+    }
+
+    /* Timestamp */
+    .timestamp {
+        font-size: 12px;
+        color: #888;
+        display: block;
+        margin-top: 5px;
+    }
+
+
+
+
+/* Modal Overlay (Initially Hidden) */
+.modal-overlay {
+    display: none; /* Ensures it's hidden initially */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+}
+
+
+/* Modal Content */
+.modal-content {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    width: 420px; /* Adjusted for better proportion */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    text-align: center;
+}
+
+/* Modal Title */
+.modal-content h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #5F3A74;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+}
+
+/* Form Fields */
+.modal-content label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #5F3A74;
+    display: block;
+    margin-top: 15px;
+    text-align: left;
+}
+
+.modal-content input,
+.modal-content textarea {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    border: 1.5px solid #C5A3D7;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: #FAF5FF;
+    outline: none;
+    resize: none;
+}
+
+/* Modal Buttons */
+.modal-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+}
+
+/* Cancel Button */
+.cancel-btn {
+    background: white;
+    border: 2px solid #6b3e75;
+    color: #6b3e75;
+    border-radius: 50px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 45%;
+}
+
+/* Post Button */
+.submit-btn {
+    background: #6b3e75;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    width: 45%;
+}
+
+/* Button Hover Effects */
+.cancel-btn:hover {
+    background: #6b3e75;
+    color: white;
+}
+
+.submit-btn:hover {
+    background: #4e2b59;
+}
+
+
+
+
+/*  SIT-IN */
+
+
+.admin-search-container {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 50%;
+    margin-bottom: 2%;
+}
+
+.admin-sitin-search-box {
+    position: relative;
+    width: 100%;
+}
+
+.admin-sitin-search-box input {
+    width: 100%;
+    padding: 10px 10px 10px 40px; /* Add left padding for icon space */
+    font-size: 14px;
+    border-radius: 5px;
+    outline: none;
+    border: none;
+}
+
+.admin-sitin-search-box .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+}
+
+
+/* Tabs */
+.tabs {
+    display: flex;
+    margin-bottom: 13px;
+}
+
+.tab {
+    background: none;
+    border: none;
+    padding: 8px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #C0B1C8;
+    position: relative;
+    transition: color 0.3s;
+}
+
+.tab:hover {
+    color: #7d4c96; /* Slightly lighter color on hover */
+}
+
+.tab.active {
+    color: #5F3A74;
+    border-bottom: 3px solid #5F3A74; /* Underline when active */
+}
+
+
+/* Table */
+.admin-sitin-container {
+    width: 100%;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+}
+
+
+
+.sitin-table-container table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sitin-table-container th, td {
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 400;
+    text-align: left;
+    border-bottom: 1.5px solid #ddd;
+}
+
+.sitin-table-container th {
+    background: #5F3A74;
+    color: white;
+}
+
+
+/* Action Button */
+.logout-sitin-btn {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.logout-sitin-btn:hover {
+    background-color: #c0392b;
+}
+
+/* Sitin in overlay  */
+.admin-sitin-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+.admin-sitin-overlay-content {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    width: 45s0px;
+    text-align: center;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+    font-family: 'Poppins', sans-serif;
+}
+.admin-sitin-overlay-content h2 {
+    font-size: 20px;
+    color: #5F3A74;
+}
+.student-profile-img {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    margin: 30px 0;
+}
+.student-details {
+    display: flex;
+    gap: 20px; /* Space between labels and values */
+    font-family: 'Poppins', sans-serif;
+    font-size: 16px;
+}
+
+.student-labels, .student-values {
+    display: flex;
+    flex-direction: column;
+}
+
+.student-labels {
+    color: #A489C8; /* Soft purple color for labels */
+    font-weight: 400; /* Slightly bold */
+    text-align: right;
+    min-width: 150px; /* Ensures alignment */
+}
+
+.student-values {
+    text-align: left;
+    color: #000; /* Black text for values */
+    font-weight: 400;
+}
+
+.student-values a {
+    color: #000;
+    text-decoration: none;
+}
+
+.student-values a:hover {
+    text-decoration: underline;
+}
+
+.sitin-form-group {
+    display: flex;
+    gap: 20px; /* Space between label and dropdown */
+    font-family: 'Poppins', sans-serif;
+    font-size: 16px;
+    align-items: center; /* Align label and select dropdown */
+    margin-top: 20px;
+    margin-bottom: 30px;
+}
+
+.sitin-labels, .sitin-select {
+    display: flex;
+    flex-direction: column;
+    border: none;
+    outline: none;
+    
+}
+
+
+.sitin-labels {
+    color: #A489C8; /* Soft purple color */
+    font-weight: 400;
+    text-align: right;
+    min-width: 150px; /* Ensures label alignment */
+}
+
+.sitin-select select {
+    font-size: 16px;
+    padding: 2px;
+    background-color: #fff;
+    border: none;
+    outline: none;
+    width: 200px; /* Adjust width for better layout */
+    border-bottom: 1.5px solid #5F3A74;
+    
+}
+
+.overlay-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
+}
+.cancel-btn, .checkin-btn {
+    padding: 10px 20px;
+    border-radius: 50px;
+    font-size: 14px;
+    cursor: pointer;
+    width: 45%;
+}
+.cancel-btn {
+    background: white;
+    border: 2px solid #6b3e75;
+    color: #6b3e75;
+}
+.cancel-btn:hover {
+    background: #6b3e75;
+    color: white;
+}
+.checkin-btn {
+    background: #6b3e75;
+    color: white;
+    border: none;
+}
+.checkin-btn:hover {
+    background: #4e2b59;
+}
