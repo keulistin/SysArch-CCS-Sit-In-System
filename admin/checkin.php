@@ -1,39 +1,71 @@
 <?php
-require '../db_connect.php';  // Ensure this connects to your database
+require '../db_connect.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $student_idno = $_POST['student_idno'] ?? null;
-    $purpose = $_POST['purpose'] ?? null;
-    $lab = $_POST['lab'] ?? null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sitin_id'])) {
+    $sitin_id = $_POST['sitin_id'];
 
-    if (!$student_idno || !$purpose || !$lab) {
-        echo json_encode(["success" => false, "message" => "Invalid input. Please fill all fields."]);
-        exit();
-    }
-
-    // Check if the student is already checked in
-    $check_stmt = $conn->prepare("SELECT * FROM current_sitin WHERE student_idno = ?");
-    $check_stmt->bind_param("s", $student_idno);
-    $check_stmt->execute();
-    $result = $check_stmt->get_result();
-    $check_stmt->close();
-
-    if ($result->num_rows > 0) {
-        echo json_encode(["success" => false, "message" => "This student is already checked in. Please check out first."]);
-        exit();
-    }
-
-    // If not checked in, proceed with check-in
-    $insert_stmt = $conn->prepare("INSERT INTO current_sitin (student_idno, sitin_purpose, lab_room, start_time) VALUES (?, ?, ?, NOW())");
-    $insert_stmt->bind_param("sss", $student_idno, $purpose, $lab);
+    // Fetch the specific sit-in record using sitin_id
+    $stmt = $conn->prepare("SELECT c.sitin_id, s.student_idno, 
+                                   CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
+                                   s.course, s.year_level, u.email, 
+                                   c.sitin_purpose, c.lab_room, 
+                                   c.start_time, NOW() AS end_time
+                            FROM current_sitin c
+                            JOIN student s ON c.student_idno = s.student_idno
+                            JOIN user u ON s.user_id = u.user_id
+                            WHERE c.sitin_id = ?");
+    $stmt->bind_param("s", $sitin_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
     
-    if ($insert_stmt->execute()) {
-        echo json_encode(["success" => true, "message" => "Student successfully checked in."]);
+    if ($result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        $end_time = $row['end_time'];
+        $start_time = $row['start_time'];
+
+        // Calculate duration in minutes
+        $duration = round((strtotime($end_time) - strtotime($start_time)) / 60);
+
+        // **Insert into sitin_history with sitin_id**
+        $insertStmt = $conn->prepare("INSERT INTO sitin_history 
+                                      (sitin_id, student_idno, sitin_purpose, lab_room, start_time, end_time, duration) 
+                                      VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $insertStmt->bind_param("ssssssi", 
+            $row['sitin_id'], 
+            $row['student_idno'], 
+            $row['sitin_purpose'], 
+            $row['lab_room'], 
+            $start_time, 
+            $end_time, 
+            $duration
+        );
+        $insertStmt->execute();
+        $history_id = $conn->insert_id;
+
+        // **Delete from current_sitin AFTER inserting into history**
+        $deleteStmt = $conn->prepare("DELETE FROM current_sitin WHERE sitin_id = ?");
+        $deleteStmt->bind_param("s", $sitin_id);
+        $deleteStmt->execute();
+
+        // Return success with the new history_id
+        echo json_encode([
+            "success" => true,
+            "message" => "Student checked out successfully!",
+            "history_id" => $history_id, 
+            "sitin_id" => $row['sitin_id'],
+            "student_idno" => $row['student_idno'],
+            "full_name" => $row['full_name'],
+            "sitin_purpose" => $row['sitin_purpose'],
+            "lab_room" => $row['lab_room'],
+            "start_time" => $start_time,
+            "end_time" => $end_time,
+            "duration" => $duration
+        ]);
     } else {
-        echo json_encode(["success" => false, "message" => "Error checking in student."]);
+        echo json_encode(["success" => false, "message" => "Sit-in record not found."]);
     }
 
-    $insert_stmt->close();
-    $conn->close();
+    $stmt->close();
+    exit();
 }
 ?>

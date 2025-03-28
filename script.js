@@ -189,7 +189,8 @@ document.addEventListener("DOMContentLoaded", function () {
         .then(data => {
             alert(data.message);
             if (data.success) {
-                location.reload(); // Reload to show updates
+                localStorage.setItem("sitin_id" + studentId, data.sitin_id); // Store sitin_id
+                location.reload();
             }
         })
         .catch(error => console.error("Error:", error));
@@ -198,74 +199,45 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
+
 //checkout
 document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".checkout-btn").forEach(button => {
-        button.addEventListener("click", function () {
-            let studentId = this.getAttribute("data-id");
+    document.body.addEventListener("click", function (event) {
+        if (event.target.closest(".checkout-btn")) {
+            const button = event.target.closest(".checkout-btn");
+            const sitinId = button.getAttribute("data-sitin-id"); // Get sitin_id
 
-            if (!confirm("Are you sure you want to check out this student?")) return;
+            if (!sitinId) {
+                alert("Error: Sit-in ID not found.");
+                return;
+            }
 
             fetch("checkout.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: "student_idno=" + encodeURIComponent(studentId)
+                body: `sitin_id=${encodeURIComponent(sitinId)}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert("Checkout successful!");
-
-                    // Remove row from current sit-in table
-                    this.closest("tr").remove();
-
-                    // Reduce session count in UI if overlay is open
-                    let sessionElement = document.getElementById("student-session");
-                    if (sessionElement) {
-                        let currentSessions = parseInt(sessionElement.innerText, 10);
-                        sessionElement.innerText = Math.max(0, currentSessions - 1);
-                    }
-
-                    // **Dynamically Add Entry to Sit-In History Table**
-                    if (data.data) {
-                        let historyTable = document.getElementById("historySitin").querySelector("tbody");
-                        let newRow = document.createElement("tr");
-
-                        newRow.innerHTML = `
-                            <td>${data.data.student_idno}</td>
-                            <td>${data.data.full_name}</td>
-                            <td>${data.data.sitin_purpose}</td>
-                            <td>${data.data.lab_room}</td>
-                            <td>${formatTime(data.data.start_time)}</td>
-                            <td>${formatTime(data.data.end_time)}</td>
-                            <td>${data.data.duration} mins</td>
-                        `;
-
-                        historyTable.prepend(newRow); // Add new history entry at the top
-                    }
-
+                    alert(data.message);
+                    location.reload();
                 } else {
-                    alert("Error: " + data.message);
+                    alert(data.message);
                 }
             })
             .catch(error => console.error("Error:", error));
-        });
+        }
     });
 });
 
-// **Helper Function to Format Time (12-Hour Format)**
-function formatTime(time) {
-    let date = new Date(time);
-    let hours = date.getHours();
-    let minutes = date.getMinutes();
-    let ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    minutes = minutes < 10 ? '0' + minutes : minutes;
-    return hours + ':' + minutes + ' ' + ampm;
-}
 
 
 
+
+
+
+//student history
 document.addEventListener("DOMContentLoaded", function () {
     fetch("student_history.php") // Fetch only logged-in student's history
         .then(response => response.json())
@@ -318,14 +290,28 @@ document.addEventListener("DOMContentLoaded", function () {
     const modal = document.getElementById("sitIn-feedbackModal");
     const closeModal = document.querySelector(".sitIn-close");
     const feedbackForm = document.getElementById("sitIn-feedbackForm");
-    const historyIdField = document.getElementById("sitIn-historyId"); // Change ID to reflect history_id
+    const historyIdField = document.getElementById("sitIn-historyId");
+    const feedbackField = document.getElementById("sitIn-feedback");
 
-    // Event delegation for feedback button click
+    // Event delegation for feedback and view buttons
     document.body.addEventListener("click", function (event) {
-        if (event.target.closest(".feedback-btn")) {
-            const button = event.target.closest(".feedback-btn");
-            const historyId = button.getAttribute("data-id"); // Use history_id instead
-            historyIdField.value = historyId; // Set history ID in modal
+        const button = event.target.closest("button");
+
+        if (!button) return;
+
+        if (button.classList.contains("feedback-btn")) {
+            // Open feedback submission modal
+            historyIdField.value = button.getAttribute("data-id");
+            feedbackField.value = ""; // Clear previous input
+            feedbackField.readOnly = false; // Allow typing
+            feedbackForm.style.display = "block";
+            modal.style.display = "flex"; // Show modal
+        } else if (button.classList.contains("view-feedback-btn")) {
+            // Open view-only feedback modal
+            historyIdField.value = button.getAttribute("data-id");
+            feedbackField.value = button.getAttribute("data-feedback"); // Load feedback
+            feedbackField.readOnly = true; // Prevent editing
+            feedbackForm.style.display = "none"; // Hide submit button
             modal.style.display = "flex"; // Show modal
         }
     });
@@ -354,3 +340,166 @@ document.addEventListener("DOMContentLoaded", function () {
         .catch(error => console.error("Error:", error));
     });
 });
+
+
+
+//STUDENT LIST
+document.addEventListener("DOMContentLoaded", function () {
+    const searchForm = document.getElementById("adminStudentListSearchForm");
+    const searchInput = document.getElementById("adminStudentListSearchInput");
+    const studentTableBody = document.getElementById("studentTableBody");
+    const cancelSearchBtn = document.getElementById("cancelSearchBtn");
+
+    let defaultTableContent = studentTableBody.innerHTML; // Store the original table data
+
+    // Function to load the default full student list
+    function resetTable() {
+        studentTableBody.innerHTML = defaultTableContent; // Restore original content
+        searchInput.value = ""; // Clear search input
+    }
+
+    if (searchForm && searchInput && studentTableBody) {
+        searchForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            let query = searchInput.value.trim();
+
+            if (query !== "") {
+                fetch("admin_studentlist.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: `searchStudent=${encodeURIComponent(query)}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.data.length > 0) {
+                        studentTableBody.innerHTML = ""; // Clear existing rows
+
+                        data.data.forEach(student => {
+                            let row = `
+                                <tr>
+                                    <td>${student.student_idno}</td>
+                                    <td>${student.full_name}</td>
+                                    <td>${student.username}</td>
+                                    <td><a href="mailto:${student.email}">${student.email}</a></td>
+                                    <td>${student.course}</td>
+                                    <td>${student.year_level}</td>
+                                    <td>${student.remaining_sitin}</td>
+                                    <td>
+                                        <button class="reset-btn" data-id="${student.student_idno}" style="background: none; border: none; cursor: pointer;">
+                                            <img src="../images/reset.png" alt="Exit" width="60" height="24">
+                                        </button>
+                                    </td>
+                                </tr>`;
+                            studentTableBody.innerHTML += row;
+                        });
+                    } else {
+                        studentTableBody.innerHTML = "<tr><td colspan='8'>No students found.</td></tr>";
+                    }
+                })
+                .catch(error => console.error("Error:", error));
+            } else {
+                alert("Please enter a student name or ID.");
+            }
+        });
+    }
+
+    // Cancel (X) Button: Clears search input & restores full student list
+    if (cancelSearchBtn) {
+        cancelSearchBtn.addEventListener("click", resetTable);
+    }
+});
+
+
+//RESET REMAINING SIT_IN
+
+document.addEventListener("DOMContentLoaded", function () {
+    const searchForm = document.getElementById("adminStudentListSearchForm");
+    const searchInput = document.getElementById("adminStudentListSearchInput");
+    const studentTableBody = document.getElementById("studentTableBody");
+    const cancelSearchBtn = document.getElementById("cancelSearchBtn");
+
+    // Search student event
+    searchForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        let query = searchInput.value.trim();
+
+        if (query !== "") {
+            fetch("admin_studentlist.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `searchStudent=${encodeURIComponent(query)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data.length > 0) {
+                    studentTableBody.innerHTML = ""; // Clear table
+
+                    data.data.forEach(student => {
+                        let row = `
+                            <tr>
+                                <td>${student.student_idno}</td>
+                                <td>${student.full_name}</td>
+                                <td>${student.username}</td>
+                                <td><a href="mailto:${student.email}">${student.email}</a></td>
+                                <td>${student.course}</td>
+                                <td>${student.year_level}</td>
+                                <td class="remaining-sitin" data-id="${student.student_idno}">${student.remaining_sitin}</td>
+                                <td>
+                                    <button class="reset-btn" data-id="${student.student_idno}" style="background: none; border: none; cursor: pointer;">
+                                        <img src="../images/reset.png" alt="Reset" width="60" height="24">
+                                    </button>
+                                </td>
+                            </tr>`;
+                        studentTableBody.innerHTML += row;
+                    });
+
+                    attachResetButtonListeners(); // Attach event listeners again
+                } else {
+                    studentTableBody.innerHTML = "<tr><td colspan='8'>No students found.</td></tr>";
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        } else {
+            alert("Please enter a student name or ID.");
+        }
+    });
+
+    // Cancel (X) Button: Clears search input & restores full student list
+    cancelSearchBtn.addEventListener("click", function () {
+        location.reload(); // Reloads the page to show the full student list
+    });
+
+    // 🔹 Separate function for resetting remaining sit-in
+    function resetRemainingSitIn(studentId) {
+        if (confirm("Are you sure you want to reset the remaining sit-in for this student?")) {
+            fetch("reset_sitin.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `student_idno=${encodeURIComponent(studentId)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload(); // 🔄 Reload the page after confirmation
+                } else {
+                    alert("Error: " + data.message);
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        }
+    }
+
+    // Function to attach event listeners to reset buttons
+    function attachResetButtonListeners() {
+        document.querySelectorAll(".reset-btn").forEach(button => {
+            button.addEventListener("click", function () {
+                let studentId = this.getAttribute("data-id");
+                resetRemainingSitIn(studentId); // Calls the separate reset function
+            });
+        });
+    }
+
+    attachResetButtonListeners(); // Attach event listeners when page loads
+});
+

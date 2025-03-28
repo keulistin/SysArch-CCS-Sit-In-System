@@ -1,72 +1,65 @@
 <?php
-require '../db_connect.php';  // Ensure proper database connection
+require '../db_connect.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $student_idno = $_POST['student_idno'] ?? null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sitin_id'])) {
+    $sitin_id = $_POST['sitin_id'];
 
-    if (!$student_idno) {
-        echo json_encode(["success" => false, "message" => "Invalid student ID."]);
-        exit();
+    // Fetch the sit-in record using sitin_id
+    $stmt = $conn->prepare("SELECT c.sitin_id, s.student_idno, 
+                                   CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
+                                   c.sitin_purpose, c.lab_room, 
+                                   c.start_time, NOW() AS end_time
+                            FROM current_sitin c
+                            JOIN student s ON c.student_idno = s.student_idno
+                            JOIN user u ON s.user_id = u.user_id
+                            WHERE c.sitin_id = ?");
+    $stmt->bind_param("s", $sitin_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        $end_time = $row['end_time'];
+        $start_time = $row['start_time'];
+        $duration = round((strtotime($end_time) - strtotime($start_time)) / 60);
+
+        // Insert into sitin_history with sitin_id
+        $insertStmt = $conn->prepare("INSERT INTO sitin_history 
+                                      (sitin_id, student_idno, sitin_purpose, lab_room, start_time, end_time, duration) 
+                                      VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $insertStmt->bind_param("ssssssi", 
+            $row['sitin_id'], 
+            $row['student_idno'], 
+            $row['sitin_purpose'], 
+            $row['lab_room'], 
+            $start_time, 
+            $end_time, 
+            $duration
+        );
+        $insertStmt->execute();
+
+        // Delete from current_sitin AFTER inserting into history
+        $deleteStmt = $conn->prepare("DELETE FROM current_sitin WHERE sitin_id = ?");
+        $deleteStmt->bind_param("s", $sitin_id);
+        $deleteStmt->execute();
+
+        echo json_encode([
+            "success" => true,
+            "message" => "Student checked out successfully!",
+            "sitin_id" => $row['sitin_id'],
+            "student_idno" => $row['student_idno'],
+            "full_name" => $row['full_name'],
+            "sitin_purpose" => $row['sitin_purpose'],
+            "lab_room" => $row['lab_room'],
+            "start_time" => $start_time,
+            "end_time" => $end_time,
+            "duration" => $duration
+        ]);
+    } else {
+        echo json_encode(["success" => false, "message" => "Sit-in record not found."]);
     }
 
-    // Start a transaction
-    $conn->begin_transaction();
-
-    try {
-        // Move student sit-in record from `current_sitin` to `sitin_history`
-        $sql_insert = "INSERT INTO sitin_history (student_idno, admin_idno, lab_room, sitin_purpose, start_time, end_time, duration) 
-                       SELECT student_idno, 1, lab_room, sitin_purpose, start_time, NOW(), TIMESTAMPDIFF(MINUTE, start_time, NOW()) 
-                       FROM current_sitin 
-                       WHERE student_idno = ?";
-        $stmt_insert = $conn->prepare($sql_insert);
-        $stmt_insert->bind_param("s", $student_idno);
-        $stmt_insert->execute();
-        $stmt_insert->close();
-
-        // Fetch the newly inserted record to return to frontend
-        $sql_get = "SELECT h.student_idno, 
-                           CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
-                           h.sitin_purpose, 
-                           h.lab_room, 
-                           h.start_time, 
-                           h.end_time, 
-                           h.duration 
-                    FROM sitin_history h
-                    JOIN student s ON h.student_idno = s.student_idno
-                    JOIN user u ON s.user_id = u.user_id
-                    WHERE h.student_idno = ? 
-                    ORDER BY h.end_time DESC LIMIT 1";
-        
-        $stmt_get = $conn->prepare($sql_get);
-        $stmt_get->bind_param("s", $student_idno);
-        $stmt_get->execute();
-        $result = $stmt_get->get_result();
-        $checked_out_student = $result->fetch_assoc();
-        $stmt_get->close();
-
-        // Delete from `current_sitin`
-        $sql_delete = "DELETE FROM current_sitin WHERE student_idno = ?";
-        $stmt_delete = $conn->prepare($sql_delete);
-        $stmt_delete->bind_param("s", $student_idno);
-        $stmt_delete->execute();
-        $stmt_delete->close();
-
-        // Decrease remaining sit-in session count in the student table
-        $sql_update = "UPDATE student SET remaining_sitin = remaining_sitin - 1 WHERE student_idno = ? AND remaining_sitin > 0";
-        $stmt_update = $conn->prepare($sql_update);
-        $stmt_update->bind_param("s", $student_idno);
-        $stmt_update->execute();
-        $stmt_update->close();
-
-        // Commit the transaction
-        $conn->commit();
-
-        echo json_encode(["success" => true, "message" => "Checkout successful!", "data" => $checked_out_student]);
-    } catch (Exception $e) {
-        $conn->rollback();
-        echo json_encode(["success" => false, "message" => "Error: " . $e->getMessage()]);
-    }
-
-    $conn->close();
+    $stmt->close();
+    exit();
 }
 ?>

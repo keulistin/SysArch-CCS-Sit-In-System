@@ -34,7 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['searchStudent'])) {
 }
 
 // Fetch sit-in history records
-$sql_history = "SELECT s.student_idno, 
+$sql_history = "SELECT h.history_id,
+                        s.student_idno, 
                        CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
                        s.course, 
                        s.year_level, 
@@ -54,7 +55,8 @@ $result_history = $conn->query($sql_history);
 
 
 // Fetch current sit-in records
-$sql = "SELECT s.student_idno, 
+$sql = "SELECT c.sitin_id,  -- Include sitin_id here
+               s.student_idno, 
                CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
                s.course, 
                s.year_level, 
@@ -67,6 +69,7 @@ $sql = "SELECT s.student_idno,
         JOIN student s ON c.student_idno = s.student_idno
         JOIN user u ON s.user_id = u.user_id
         ORDER BY c.start_time DESC";
+
 
 $result = $conn->query($sql);
 ?>
@@ -130,10 +133,13 @@ $result = $conn->query($sql);
                                 echo "<td>" . htmlspecialchars($row['lab_room']) . "</td>";
                                 echo "<td>" . date("h:i A", strtotime($row['start_time'])) . "</td>"; 
                                 echo '<td>
-                                        <button class="checkout-btn" data-id="' . htmlspecialchars($row['student_idno']) .'" style="background: none; border: none; cursor: pointer;">
-                                            <img src="../images/checkout.png" alt="Exit" width="50" height="24">
-                                        </button>
-                                    </td>';
+                                <button class="checkout-btn" 
+                                        data-id="' . htmlspecialchars($row['student_idno']) . '" 
+                                        data-sitin-id="' . htmlspecialchars($row['sitin_id']) . '" 
+                                        style="background: none; border: none; cursor: pointer;">
+                                    <img src="../images/checkout.png" alt="Exit" width="50" height="24">
+                                </button>
+                              </td>';                                                  
                                 echo "</tr>";
                             }
                         } else {
@@ -141,6 +147,7 @@ $result = $conn->query($sql);
                         }
                         ?>
                     </tbody>
+
                 </table>
             </div>
         </div>

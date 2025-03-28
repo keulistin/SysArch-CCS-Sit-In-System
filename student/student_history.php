@@ -10,8 +10,25 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
-// Fetch sit-in history for the logged-in user
-$sql_history = "SELECT s.student_idno, 
+// Fetch the student's ID based on the logged-in user
+$sql_student = "SELECT student_idno FROM student WHERE user_id = ?";
+$stmt_student = $conn->prepare($sql_student);
+$stmt_student->bind_param("s", $user_id);
+$stmt_student->execute();
+$result_student = $stmt_student->get_result();
+$student = $result_student->fetch_assoc();
+$stmt_student->close();
+
+if (!$student) {
+    echo json_encode(["success" => false, "message" => "Student record not found."]);
+    exit();
+}
+
+$student_idno = $student['student_idno']; // Get the correct student ID
+
+// Fetch sit-in history for the logged-in student
+$sql_history = "SELECT h.history_id,
+                       h.student_idno, 
                        CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
                        s.course, 
                        s.year_level, 
@@ -25,22 +42,22 @@ $sql_history = "SELECT s.student_idno,
                 FROM sitin_history h
                 JOIN student s ON h.student_idno = s.student_idno
                 JOIN user u ON s.user_id = u.user_id
-                WHERE u.user_id = ?
+                WHERE h.student_idno = ?
                 ORDER BY h.end_time DESC";
 
 $stmt = $conn->prepare($sql_history);
-$stmt->bind_param("s", $user_id);
+$stmt->bind_param("s", $student_idno);
 $stmt->execute();
 $result_history = $stmt->get_result();
 
 $history = [];
-
 while ($row = $result_history->fetch_assoc()) {
     $history[] = $row;
 }
 
 $stmt->close();
 $conn->close();
+
 ?>
 
 <!DOCTYPE html>
@@ -84,25 +101,36 @@ $conn->close();
                     </thead>
                     <tbody id="studentSitinHistoryTable">
                         <?php
-                            if (!empty($history)) {
-                                foreach ($history as $row) {
-                                    echo "<tr>";
-                                    echo "<td>" . htmlspecialchars($row['student_idno']) . "</td>";
-                                    echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
-                                    echo "<td>" . htmlspecialchars($row['sitin_purpose']) . "</td>";
-                                    echo "<td>" . htmlspecialchars($row['lab_room']) . "</td>";
-                                    echo "<td>" . date("h:i A", strtotime($row['start_time'])) . "</td>";
-                                    echo "<td>" . date("h:i A", strtotime($row['end_time'])) . "</td>";
-                                    echo "<td>" . htmlspecialchars($row['sitin_date']) . "</td>";
+                            foreach ($history as $row) {
+                                echo "<tr>";
+                                echo "<td>" . htmlspecialchars($row['student_idno']) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['sitin_purpose']) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['lab_room']) . "</td>";
+                                echo "<td>" . date("h:i A", strtotime($row['start_time'])) . "</td>";
+                                echo "<td>" . date("h:i A", strtotime($row['end_time'])) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['sitin_date']) . "</td>";
+
+                                if (!empty($row['feedback_desc'])) {
+                                    // Feedback exists: Show "View Feedback" button
                                     echo '<td>
-                                        <button class="feedback-btn" data-id="' . htmlspecialchars($row['student_idno']) .'" style="background: none; border: none; cursor: pointer;">
-                                            <img src="../images/feedback-icon.png" alt="Exit" width="60" height="24">
-                                            </button>
-                                        </td>';
-                                    echo "</tr>";
+                                        <button class="view-feedback-btn" data-id="' . htmlspecialchars($row['history_id']) . '" 
+                                            data-feedback="' . htmlspecialchars($row['feedback_desc']) . '"
+                                            style="background: none; border: none; cursor: pointer;">
+                                            <img src="../images/view-icon.png" alt="View" width="65" height="30">
+                                        </button>
+                                    </td>';
+                                } else {
+                                    // No feedback: Show "Submit Feedback" button
+                                    echo '<td>
+                                        <button class="feedback-btn" data-id="' . htmlspecialchars($row['history_id']) . '" 
+                                            style="background: none; border: none; cursor: pointer;">
+                                            <img src="../images/feedback-icon.png" alt="Feedback" width="60" height="24">
+                                        </button>
+                                    </td>';
                                 }
-                            } else {
-                                echo "<tr><td colspan='8'>No sit-in history found.</td></tr>";
+
+                                echo "</tr>";
                             }
                         ?>
                     </tbody>

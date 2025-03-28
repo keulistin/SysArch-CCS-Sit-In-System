@@ -271,13 +271,12 @@
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    width: 50%;
     margin-bottom: 2%;
 }
 
 .admin-sitin-search-box {
     position: relative;
-    width: 100%;
+    width: 500px;
 }
 
 .admin-sitin-search-box input {
@@ -501,4 +500,81 @@
 }
 .checkin-btn:hover {
     background: #4e2b59;
+}
+
+
+/* Student List Table*/
+.student-list-container {
+    width: 100%;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+}
+
+
+
+.student-list-table-container table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.student-list-table-container th, td {
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 400;
+    text-align: left;
+    border-bottom: 1.5px solid #ddd;
+}
+
+.student-list-table-container th {
+    background: #5F3A74;
+    color: white;
+}
+
+
+
+/* Search box student list*/
+
+.search-student-container {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 2%;
+}
+
+.admin-student-list-search-box {
+    position: relative;
+    width: 500px;
+}
+
+.admin-student-list-search-box input {
+    width: 100%;
+    padding: 10px 10px 10px 40px; /* Add left padding for icon space */
+    font-size: 14px;
+    border-radius: 5px 0px 0px 5px;
+    outline: none;
+    border: none;
+}
+
+.admin-student-list-search-box .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+}
+
+#adminStudentListSearchForm {
+    display: flex;
+}
+
+.cancel-search-btn {
+    background-color: red;
+    outline: none;
+    border: none;
+    width: 35px;
+    height: 35px;
+    color: white;
+    border-radius: 0px 5px 5px 0px;
 }
