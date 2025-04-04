@@ -167,35 +167,42 @@ document.addEventListener("DOMContentLoaded", function () {
     const checkInBtn = document.querySelector(".checkin-btn");
 
     checkInBtn.addEventListener("click", function () {
-        const studentId = document.getElementById("student-id").innerText;
-        const purpose = document.getElementById("purpose").value;
-        const lab = document.getElementById("lab").value;
+        const studentId = document.getElementById("student-id").innerText.trim();
+        const studentName = document.getElementById("student-name").innerText.trim();
+        const purpose = document.getElementById("sitin_purpose").value;
+        const lab = document.getElementById("lab_room").value;
 
-        if (!purpose || !lab) {
-            alert("Please select a purpose and a laboratory.");
+        if (!studentId || !studentName || !purpose || !lab) {
+            alert("All fields are required.");
             return;
         }
 
         let formData = new FormData();
         formData.append("student_idno", studentId);
-        formData.append("purpose", purpose);
-        formData.append("lab", lab);
+        formData.append("full_name", studentName);
+        formData.append("sitin_purpose", purpose);
+        formData.append("lab_room", lab);
 
         fetch("checkin.php", {
             method: "POST",
             body: formData
         })
-        .then(response => response.json())
+        .then(response => response.text()) // First, get raw text
+        .then(text => {
+            console.log(text); // Debugging output
+            return JSON.parse(text); // Convert to JSON
+        })
         .then(data => {
             alert(data.message);
             if (data.success) {
-                localStorage.setItem("sitin_id" + studentId, data.sitin_id); // Store sitin_id
+                localStorage.setItem("sitin_id" + studentId, data.sitin_id);
                 location.reload();
             }
         })
         .catch(error => console.error("Error:", error));
     });
 });
+
 
 
 
@@ -236,10 +243,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
-
-//student history
+// Student history
 document.addEventListener("DOMContentLoaded", function () {
-    fetch("student_history.php") // Fetch only logged-in student's history
+    fetch("../SysArch_SitIn/student_history.php") // Fetch only logged-in student's history
         .then(response => response.json())
         .then(data => {
             if (!data.success) {
@@ -260,6 +266,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <td>${formatTime(student.start_time)}</td>
                     <td>${formatTime(student.end_time)}</td>
                     <td>${formatDate(student.sitin_date)}</td>
+                    <td>${student.duration} mins</td>
                     <td><button class="feedback-btn">Feedback</button></td>
                 `;
                 tableBody.appendChild(row);
@@ -271,18 +278,14 @@ document.addEventListener("DOMContentLoaded", function () {
 // Helper functions
 function formatTime(time) {
     let date = new Date(time);
-    let hours = date.getHours();
-    let minutes = date.getMinutes();
-    let ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12 || 12;
-    minutes = minutes < 10 ? "0" + minutes : minutes;
-    return hours + ":" + minutes + " " + ampm;
+    return date.toLocaleTimeString(); // Automatically converts to local time
 }
 
 function formatDate(dateString) {
     let date = new Date(dateString);
     return date.toISOString().split("T")[0]; // YYYY-MM-DD format
 }
+
 
 
 //feedbackkk

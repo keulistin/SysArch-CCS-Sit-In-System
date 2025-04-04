@@ -11,7 +11,7 @@
         margin: 0;
         padding: 0;
         background-color: #f2e6f7;
-        overflow: hidden;
+
 
     }
 
@@ -354,6 +354,11 @@
     color: white;
 }
 
+.history_body_scroll {
+    max-height: 400px; /* Set a fixed height */
+    overflow-y: auto; /* Enable vertical scrolling */
+}
+
 
 /* Action Button */
 .logout-sitin-btn {
@@ -510,7 +515,6 @@
     padding: 15px;
     border-radius: 10px;
 }
-
 
 
 .student-list-table-container table {

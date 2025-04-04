@@ -1,71 +1,64 @@
 <?php
-require '../db_connect.php';
+require_once "../db_connect.php";
+header("Content-Type: application/json");
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sitin_id'])) {
-    $sitin_id = $_POST['sitin_id'];
+// Enable error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
-    // Fetch the specific sit-in record using sitin_id
-    $stmt = $conn->prepare("SELECT c.sitin_id, s.student_idno, 
-                                   CONCAT(u.first_name, ' ', u.middle_name, ' ', u.last_name) AS full_name, 
-                                   s.course, s.year_level, u.email, 
-                                   c.sitin_purpose, c.lab_room, 
-                                   c.start_time, NOW() AS end_time
-                            FROM current_sitin c
-                            JOIN student s ON c.student_idno = s.student_idno
-                            JOIN user u ON s.user_id = u.user_id
-                            WHERE c.sitin_id = ?");
-    $stmt->bind_param("s", $sitin_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
-        $end_time = $row['end_time'];
-        $start_time = $row['start_time'];
+$response = ["success" => false, "message" => ""];
 
-        // Calculate duration in minutes
-        $duration = round((strtotime($end_time) - strtotime($start_time)) / 60);
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $student_idno = $_POST['student_idno'] ?? '';
+    $full_name = $_POST['full_name'] ?? ''; 
+    $sitin_purpose = $_POST['sitin_purpose'] ?? '';
+    $lab_room = $_POST['lab_room'] ?? '';
+    $start_time = date("H:i:s");
+    $sitin_date = date("Y-m-d");
 
-        // **Insert into sitin_history with sitin_id**
-        $insertStmt = $conn->prepare("INSERT INTO sitin_history 
-                                      (sitin_id, student_idno, sitin_purpose, lab_room, start_time, end_time, duration) 
-                                      VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $insertStmt->bind_param("ssssssi", 
-            $row['sitin_id'], 
-            $row['student_idno'], 
-            $row['sitin_purpose'], 
-            $row['lab_room'], 
-            $start_time, 
-            $end_time, 
-            $duration
-        );
-        $insertStmt->execute();
-        $history_id = $conn->insert_id;
+    // Validate required fields
+    if (empty($student_idno) || empty($full_name) || empty($sitin_purpose) || empty($lab_room)) {
+        $response["message"] = "All fields are required.";
+        echo json_encode($response);
+        exit;
+    }
 
-        // **Delete from current_sitin AFTER inserting into history**
-        $deleteStmt = $conn->prepare("DELETE FROM current_sitin WHERE sitin_id = ?");
-        $deleteStmt->bind_param("s", $sitin_id);
-        $deleteStmt->execute();
+    // Debug: Log received values
+    error_log("Check-in Data: Student ID: $student_idno, Name: $full_name, Purpose: $sitin_purpose, Lab: $lab_room");
 
-        // Return success with the new history_id
-        echo json_encode([
-            "success" => true,
-            "message" => "Student checked out successfully!",
-            "history_id" => $history_id, 
-            "sitin_id" => $row['sitin_id'],
-            "student_idno" => $row['student_idno'],
-            "full_name" => $row['full_name'],
-            "sitin_purpose" => $row['sitin_purpose'],
-            "lab_room" => $row['lab_room'],
-            "start_time" => $start_time,
-            "end_time" => $end_time,
-            "duration" => $duration
-        ]);
+    // Check if the database connection is successful
+    if (!$conn) {
+        $response["message"] = "Database connection failed.";
+        echo json_encode($response);
+        exit;
+    }
+
+    // Insert into database
+    $stmt = $conn->prepare("INSERT INTO current_sitin (student_idno, full_name, sitin_purpose, lab_room, sitin_date) 
+    VALUES (?, ?, ?, ?, ?)");
+
+
+    if (!$stmt) {
+        $response["message"] = "Database statement error: " . $conn->error;
+        echo json_encode($response);
+        exit;
+    }
+
+
+    $stmt->bind_param("sssss", $student_idno, $full_name, $sitin_purpose, $lab_room, $sitin_date);
+    if ($stmt->execute()) {
+        $response["success"] = true;
+        $response["message"] = "Check-in successful.";
+        $response["sitin_id"] = $stmt->insert_id; // Return sitin_id
     } else {
-        echo json_encode(["success" => false, "message" => "Sit-in record not found."]);
+        $response["message"] = "Student currently checked in, check out student first. " . $stmt->error;
+        error_log($stmt->error);
     }
 
     $stmt->close();
-    exit();
+    $conn->close();
+} else {
+    $response["message"] = "Invalid request method.";
 }
-?>
+
+echo json_encode($response);

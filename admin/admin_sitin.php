@@ -43,8 +43,7 @@ $sql_history = "SELECT h.history_id,
                        h.sitin_purpose, 
                        h.lab_room, 
                        h.start_time, 
-                       h.end_time, 
-                       h.duration 
+                       h.end_time
                 FROM sitin_history h
                 JOIN student s ON h.student_idno = s.student_idno
                 JOIN user u ON s.user_id = u.user_id
@@ -166,7 +165,6 @@ $result = $conn->query($sql);
                             <th>Lab</th>
                             <th>Time-In</th>
                             <th>Time-Out</th>
-                            <th>Duration (mins)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -180,7 +178,6 @@ $result = $conn->query($sql);
                                 echo "<td>" . htmlspecialchars($row['lab_room']) . "</td>";
                                 echo "<td>" . date("h:i A", strtotime($row['start_time'])) . "</td>";
                                 echo "<td>" . date("h:i A", strtotime($row['end_time'])) . "</td>";
-                                echo "<td>" . htmlspecialchars($row['duration']) . "</td>";
                                 echo "</tr>";
                             }
                         } else {
@@ -224,14 +221,14 @@ $result = $conn->query($sql);
                             <label for="lab">Laboratory</label>
                         </div>
                         <div class="sitin-select">
-                            <select id="purpose">
+                            <select id="sitin_purpose">
                                 <option value="" disabled selected>Select Purpose</option>
                                 <option>C# Programming</option>
                                 <option>Java Programming</option>
                                 <option>ASP.Net Programming</option>
                                 <option>Php Programming</option>
                             </select>
-                            <select id="lab">
+                            <select id="lab_room">
                                 <option value="" disabled selected>Select Laboratory</option>
                                 <option>512</option>
                                 <option>602</option>
