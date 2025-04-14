@@ -51,7 +51,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $response["message"] = "Check-in successful.";
         $response["sitin_id"] = $stmt->insert_id; // Return sitin_id
     } else {
-        $response["message"] = "Student currently checked in, check out student first. " . $stmt->error;
+        $response["message"] = "Student currently checked in, check out student first. ";
         error_log($stmt->error);
     }
 

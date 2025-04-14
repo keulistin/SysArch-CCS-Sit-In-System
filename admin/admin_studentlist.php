@@ -76,6 +76,7 @@ $result = $conn->query($sql);
                     <input type="text" id="adminStudentListSearchInput" placeholder="Search student" name="searchStudent">
                 </div>
                 <button type="button" id="cancelSearchBtn" class="cancel-search-btn">✖</button> <!-- Cancel Button -->
+                <button type="button" id="resetAllBtn" class="reset-all-btn">Reset All</button>  <!-- Reset Remaining Sitins Button -->
             </form>
         </div>
 

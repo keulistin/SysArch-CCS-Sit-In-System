@@ -413,13 +413,15 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 
-//RESET REMAINING SIT_IN
 
+
+//RESET REMAINING SIT_IN
 document.addEventListener("DOMContentLoaded", function () {
     const searchForm = document.getElementById("adminStudentListSearchForm");
     const searchInput = document.getElementById("adminStudentListSearchInput");
     const studentTableBody = document.getElementById("studentTableBody");
     const cancelSearchBtn = document.getElementById("cancelSearchBtn");
+    const resetAllBtn = document.getElementById("resetAllBtn");  // Reset All Button
 
     // Search student event
     searchForm.addEventListener("submit", function (event) {
@@ -472,7 +474,7 @@ document.addEventListener("DOMContentLoaded", function () {
         location.reload(); // Reloads the page to show the full student list
     });
 
-    // 🔹 Separate function for resetting remaining sit-in
+    // 🔹 Separate function for resetting remaining sit-in for a single student
     function resetRemainingSitIn(studentId) {
         if (confirm("Are you sure you want to reset the remaining sit-in for this student?")) {
             fetch("reset_sitin.php", {
@@ -493,6 +495,27 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    // 🔹 New function for resetting all remaining sit-ins to 30
+    function resetAllRemainingSitIn() {
+        if (confirm("Are you sure you want to reset all students' remaining sit-ins to 30?")) {
+            fetch("reset_all_sitin.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `resetAll=true`  // Send a flag to indicate reset all
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload(); // 🔄 Reload the page after reset
+                } else {
+                    alert("Error: " + data.message);
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        }
+    }
+
     // Function to attach event listeners to reset buttons
     function attachResetButtonListeners() {
         document.querySelectorAll(".reset-btn").forEach(button => {
@@ -503,6 +526,8 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // Attach event listener for the "Reset All" button
+    resetAllBtn.addEventListener("click", resetAllRemainingSitIn);
+
     attachResetButtonListeners(); // Attach event listeners when page loads
 });
-
