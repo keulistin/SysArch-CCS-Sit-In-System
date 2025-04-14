@@ -2,6 +2,15 @@
 session_start();
 require '../db_connect.php';
 
+// Only output JSON if it's an API request
+if ($_SERVER["REQUEST_METHOD"] !== "POST") {
+    $foulWords = ['atay', 'yawa', 'ass', 'shit', 'fuck', 'damn'];
+    // Don't output JSON here - just set the variable
+    // Remove or comment out this line:
+    // echo json_encode(["foul_words_list" => $foulWords]);
+    exit();
+}
+
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(["success" => false, "message" => "Unauthorized access. Please log in."]);
     exit();
@@ -30,18 +39,39 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         exit();
     }
 
-    // Insert feedback into database
+    // Insert feedback into database (allows all feedback)
     $sql = "UPDATE sitin_history SET feedback_desc = ? WHERE history_id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("ss", $feedback, $history_id);
 
     if ($stmt->execute()) {
-        echo json_encode(["success" => true, "message" => "Feedback submitted successfully."]);
+        // Return both success and foul words detection result
+        $hasFoulWords = false;
+        $lowerFeedback = strtolower($feedback);
+        foreach ($foulWords as $word) {
+            if (strpos($lowerFeedback, strtolower($word)) !== false) {
+                $hasFoulWords = true;
+                break;
+            }
+        }
+        
+        echo json_encode([
+            "success" => true,
+            "message" => "Feedback submitted successfully.",
+            "has_foul_words" => $hasFoulWords,
+            "foul_words_list" => $foulWords // Optional: Send to frontend
+        ]);
     } else {
         echo json_encode(["success" => false, "message" => "Error submitting feedback."]);
     }
 
     $stmt->close();
     $conn->close();
+    exit();
 }
+
+// If not POST request, return foul words list for frontend detection
+echo json_encode([
+    "foul_words_list" => $foulWords
+]);
 ?>

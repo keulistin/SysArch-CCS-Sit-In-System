@@ -295,6 +295,11 @@ body {
     background: #2b9b4f;
 }
 
+/* Simple foul feedback indicator */
+.view-feedback-btn.foul-feedback img {
+    filter: hue-rotate(245deg); /* Turns icon red */
+}
+
 
 /* Sit-In Feedback Modal Overlay */
 .sitIn-modal {
@@ -308,6 +313,15 @@ body {
     background-color: rgba(0, 0, 0, 0.5);
     align-items: center;
     justify-content: center;
+}
+
+/* Close Button */
+.view-close {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 24px;
+    cursor: pointer;
 }
 
 /* Modal Content */
@@ -329,6 +343,8 @@ body {
     font-size: 24px;
     cursor: pointer;
 }
+
+
 
 /* Input Fields */
 .sitIn-modal-content textarea {
@@ -423,3 +439,6 @@ body {
         margin-top: 5px;
     }
 
+
+
+    

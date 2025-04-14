@@ -152,6 +152,15 @@ $conn->close();
             </div>
         </div>
 
+        <!-- View Feedback Modal -->
+        <div id="viewFeedbackModal" class="sitIn-modal">
+            <div class="sitIn-modal-content">
+                <span class="view-close">&times;</span>
+                <h2>Your Feedback</h2>
+                <div id="feedback-display" class="feedback-display"></div>
+            </div>
+        </div>
+
     </div> <!-- content -->
 </body>
 </html>

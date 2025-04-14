@@ -290,46 +290,58 @@ function formatDate(dateString) {
 
 //feedbackkk
 document.addEventListener("DOMContentLoaded", function () {
-    const modal = document.getElementById("sitIn-feedbackModal");
-    const closeModal = document.querySelector(".sitIn-close");
+    // Feedback submission modal
+    const feedbackModal = document.getElementById("sitIn-feedbackModal");
+    const feedbackClose = document.querySelector(".sitIn-close");
     const feedbackForm = document.getElementById("sitIn-feedbackForm");
-    const historyIdField = document.getElementById("sitIn-historyId");
-    const feedbackField = document.getElementById("sitIn-feedback");
+    
+    // View feedback modal
+    const viewModal = document.getElementById("viewFeedbackModal");
+    const viewClose = document.querySelector(".view-close");
+    const feedbackDisplay = document.getElementById("feedback-display");
 
-    // Event delegation for feedback and view buttons
-    document.body.addEventListener("click", function (event) {
+    // Open modals when buttons are clicked
+    document.addEventListener("click", function(event) {
         const button = event.target.closest("button");
-
         if (!button) return;
 
         if (button.classList.contains("feedback-btn")) {
             // Open feedback submission modal
-            historyIdField.value = button.getAttribute("data-id");
-            feedbackField.value = ""; // Clear previous input
-            feedbackField.readOnly = false; // Allow typing
-            feedbackForm.style.display = "block";
-            modal.style.display = "flex"; // Show modal
-        } else if (button.classList.contains("view-feedback-btn")) {
-            // Open view-only feedback modal
-            historyIdField.value = button.getAttribute("data-id");
-            feedbackField.value = button.getAttribute("data-feedback"); // Load feedback
-            feedbackField.readOnly = true; // Prevent editing
-            feedbackForm.style.display = "none"; // Hide submit button
-            modal.style.display = "flex"; // Show modal
+            document.getElementById("sitIn-historyId").value = button.getAttribute("data-id");
+            feedbackModal.style.display = "flex";
+        } 
+        else if (button.classList.contains("view-feedback-btn")) {
+            // Open view feedback modal
+            feedbackDisplay.textContent = button.getAttribute("data-feedback");
+            viewModal.style.display = "flex";
         }
     });
 
-    // Close modal when clicking the close button
-    closeModal.addEventListener("click", function () {
-        modal.style.display = "none";
+    // Close modals
+    feedbackClose.addEventListener("click", function() {
+        feedbackModal.style.display = "none";
+    });
+    
+    viewClose.addEventListener("click", function() {
+        viewModal.style.display = "none";
+    });
+
+    // Close when clicking outside modal
+    window.addEventListener("click", function(event) {
+        if (event.target === feedbackModal) {
+            feedbackModal.style.display = "none";
+        }
+        if (event.target === viewModal) {
+            viewModal.style.display = "none";
+        }
     });
 
     // Handle feedback form submission
-    feedbackForm.addEventListener("submit", function (event) {
-        event.preventDefault(); // Prevent form refresh
-
+    feedbackForm.addEventListener("submit", function(event) {
+        event.preventDefault();
+        
         const formData = new FormData(feedbackForm);
-
+        
         fetch("submit_feedback.php", {
             method: "POST",
             body: formData
@@ -337,8 +349,10 @@ document.addEventListener("DOMContentLoaded", function () {
         .then(response => response.json())
         .then(data => {
             alert(data.message);
-            modal.style.display = "none"; // Hide modal after submission
-            location.reload(); // Refresh page to show updated feedback
+            feedbackModal.style.display = "none";
+            if (data.success) {
+                location.reload();
+            }
         })
         .catch(error => console.error("Error:", error));
     });
