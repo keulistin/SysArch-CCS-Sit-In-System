@@ -8,6 +8,9 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+// Define foul words list (same as in submit_feedback.php)
+$foulWords = ['atay', 'yawa', 'ass', 'shit', 'fuck', 'damn'];
+
 $user_id = $_SESSION['user_id'];
 
 // Fetch the student's ID based on the logged-in user
@@ -110,12 +113,22 @@ $conn->close();
                                 echo "<td>" . date("h:i A", strtotime($row['start_time'])) . "</td>";
                                 echo "<td>" . date("h:i A", strtotime($row['end_time'])) . "</td>";
                                 echo "<td>" . htmlspecialchars($row['sitin_date']) . "</td>";
-
+                               
                                 if (!empty($row['feedback_desc'])) {
-                                    // Feedback exists: Show "View Feedback" button
+                                    // Check for foul words
+                                    $containsFoulWord = false;
+                                    foreach ($foulWords as $word) {
+                                        if (stripos($row['feedback_desc'], $word) !== false) {
+                                            $containsFoulWord = true;
+                                            break;
+                                        }
+                                    }
+                                    
+                                    $buttonClass = 'view-feedback-btn' . ($containsFoulWord ? ' foul-feedback' : '');
+                                    
                                     echo '<td>
-                                        <button class="view-feedback-btn" data-id="' . htmlspecialchars($row['history_id']) . '" 
-                                            data-feedback="' . htmlspecialchars($row['feedback_desc']) . '"
+                                        <button class="'.$buttonClass.'" data-id="'.htmlspecialchars($row['history_id']).'" 
+                                            data-feedback="'.htmlspecialchars($row['feedback_desc']).'"
                                             style="background: none; border: none; cursor: pointer;">
                                             <img src="../images/view-icon.png" alt="View" width="65" height="30">
                                         </button>

@@ -336,26 +336,44 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // Handle feedback form submission
-    feedbackForm.addEventListener("submit", function(event) {
-        event.preventDefault();
+// Handle feedback form submission
+feedbackForm.addEventListener("submit", function(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(feedbackForm);
+    const historyId = formData.get('history_id');
+    const feedbackText = formData.get('feedback'); // Store the feedback text before resetting
+    
+    fetch("submit_feedback.php", {
+        method: "POST",
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        feedbackModal.style.display = "none";
         
-        const formData = new FormData(feedbackForm);
+        // Reset the form textarea
+        document.getElementById("sitIn-feedback").value = "";
         
-        fetch("submit_feedback.php", {
-            method: "POST",
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            alert(data.message);
-            feedbackModal.style.display = "none";
-            if (data.success) {
-                location.reload();
+        if (data.success) {
+            const feedbackBtn = document.querySelector(`.feedback-btn[data-id="${historyId}"]`);
+            
+            if (feedbackBtn) {
+                feedbackBtn.classList.remove('feedback-btn');
+                feedbackBtn.classList.add('view-feedback-btn');
+                
+                if (data.hasFoulWord) {
+                    feedbackBtn.classList.add('foul-feedback');
+                }
+                
+                feedbackBtn.innerHTML = '<img src="../images/view-icon.png" alt="View" width="65" height="30">';
+                feedbackBtn.setAttribute('data-feedback', feedbackText);
             }
-        })
-        .catch(error => console.error("Error:", error));
-    });
+        }
+    })
+    .catch(error => console.error("Error:", error));
+});
 });
 
 

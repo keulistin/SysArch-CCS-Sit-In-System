@@ -11,7 +11,6 @@ body {
     margin: 0;
     padding: 0;
     background-color: #f2e6f7;
-    overflow: hidden;
 
 }
 
@@ -295,11 +294,16 @@ body {
     background: #2b9b4f;
 }
 
-/* Simple foul feedback indicator */
-.view-feedback-btn.foul-feedback img {
-    filter: hue-rotate(245deg); /* Turns icon red */
+/* Add to student_styles.css */
+.view-feedback-btn.foul-feedback {
+    background-color: #ffdddd !important;
+    border: 1px solid #ff9999 !important;
+    border-radius: 4px;
 }
 
+.view-feedback-btn.foul-feedback img {
+    filter: hue-rotate(300deg) saturate(5);
+}
 
 /* Sit-In Feedback Modal Overlay */
 .sitIn-modal {
