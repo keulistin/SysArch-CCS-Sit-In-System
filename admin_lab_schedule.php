@@ -26,6 +26,10 @@ $day_groups = array(
     'Sat' => 'Saturday'
 );
 
+// Determine active tab from POST or default to 'MW'
+$active_tab = $_GET['tab'] ?? 'MW';
+
+
 // Generate time slots from 7:30 AM to 9:00 PM in 1.5 hour increments
 $time_slots = array();
 $start_time = strtotime('7:30 AM');
@@ -43,38 +47,42 @@ while ($start_time < $end_time) {
     $start_time = $end_slot;
 }
 
-// Handle status update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lab'], $_POST['time_slot'], $_POST['day_group'], $_POST['status'])) {
     $lab = $_POST['lab'];
     $time_slot = $_POST['time_slot'];
     $day_group = $_POST['day_group'];
-    $status = $_POST['status']; // 'available' or 'occupied'
-    
+    $status = $_POST['status']; // 'open' or 'close'
+
     // Check if record exists
     $check_query = "SELECT id FROM static_lab_schedules WHERE lab_name = ? AND day_group = ? AND time_slot = ?";
     $stmt = $conn->prepare($check_query);
     $stmt->bind_param("sss", $lab, $day_group, $time_slot);
     $stmt->execute();
     $stmt->store_result();
-    
+
     if ($stmt->num_rows > 0) {
-        // Update existing record
+        // Update
         $update_query = "UPDATE static_lab_schedules SET status = ? WHERE lab_name = ? AND day_group = ? AND time_slot = ?";
         $stmt = $conn->prepare($update_query);
         $stmt->bind_param("ssss", $status, $lab, $day_group, $time_slot);
     } else {
-        // Insert new record
+        // Insert
         $insert_query = "INSERT INTO static_lab_schedules (lab_name, day_group, time_slot, status) VALUES (?, ?, ?, ?)";
         $stmt = $conn->prepare($insert_query);
         $stmt->bind_param("ssss", $lab, $day_group, $time_slot, $status);
     }
-    
+
     $stmt->execute();
     $stmt->close();
-    
+
+    // Optional: preserve active tab
+    $_SESSION['active_tab'] = $day_group;
+
     header("Location: admin_lab_schedule.php");
     exit();
 }
+
+
 
 // Fetch all lab availability from database
 $lab_availability = array();
@@ -82,7 +90,7 @@ $query = "SELECT lab_name, day_group, time_slot, status FROM static_lab_schedule
 $result = $conn->query($query);
 
 while ($row = $result->fetch_assoc()) {
-    $lab_availability[$row['lab_name']][$row['day_group']][$row['time_slot']] = ($row['status'] === 'available');
+    $lab_availability[$row['lab_name']][$row['day_group']][$row['time_slot']] = $row['status']; // 'open' or 'close'
 }
 
 // Default to available if no record exists in database
@@ -91,7 +99,7 @@ foreach ($labs as $lab) {
         foreach ($time_slots as $slot) {
             $time_slot_str = $slot['start'] . ' - ' . $slot['end'];
             if (!isset($lab_availability[$lab][$group_code][$time_slot_str])) {
-                $lab_availability[$lab][$group_code][$time_slot_str] = true;
+                $lab_availability[$lab][$group_code][$time_slot_str] = 'open';
             }
         }
     }
@@ -352,7 +360,7 @@ foreach ($labs as $lab) {
                     <button 
                         onclick="showDayGroup('<?php echo $group_code; ?>')" 
                         id="tab-<?php echo $group_code; ?>"
-                        class="inline-block p-4 border-b-2 rounded-t-lg font-medium transition-colors duration-200 day-group-tab <?php echo $group_code === 'MW' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'; ?>"
+                        class="inline-block p-4 border-b-2 rounded-t-lg font-medium transition-colors duration-200 day-group-tab <?php echo $group_code === $active_tab ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'; ?>"
                     >
                         <?php echo htmlspecialchars($group_name); ?>
                     </button>
@@ -363,7 +371,7 @@ foreach ($labs as $lab) {
 
     <!-- Schedule Tables for each Day Group -->
     <?php foreach ($day_groups as $group_code => $group_name): ?>
-        <div id="table-<?php echo $group_code; ?>" class="day-group-table mb-8 <?php echo $group_code !== 'MW' ? 'hidden' : ''; ?>">
+        <div id="table-<?php echo $group_code; ?>" class="day-group-table mb-8 <?php echo $group_code !== $active_tab ? 'hidden' : ''; ?>">
             <div class="overflow-x-auto rounded-lg shadow-sm border border-purple-100">
                 <table class="min-w-full bg-white divide-y divide-purple-200">
                     <thead>
@@ -390,8 +398,15 @@ foreach ($labs as $lab) {
                                     </div>
                                 </td>
                                 <?php foreach ($labs as $lab): 
-                                    $is_available = $lab_availability[$lab][$group_code][$time_slot_str];
-                                    $opposite_status = $is_available ? 'occupied' : 'available';
+                                    $status_value = $lab_availability[$lab][$group_code][$time_slot_str] ?? 'open';
+                                    $is_open = ($status_value === 'open');
+                                    $next_status = $is_open ? 'close' : 'open';
+                                    $label = $is_open ? 'Open' : 'Close';
+                                    $icon = $is_open ? 'fa-door-open' : 'fa-door-closed';
+                                    $classes = $is_open
+                                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                                        : 'bg-red-100 text-red-800 hover:bg-red-200';
+
                                 ?>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <form method="POST" class="inline">
@@ -401,15 +416,16 @@ foreach ($labs as $lab) {
                                             <button 
                                                 type="submit" 
                                                 name="status" 
-                                                value="<?php echo $opposite_status; ?>"
-                                                class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md <?php echo $is_available ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'; ?>"
-                                                title="Click to mark as <?php echo $opposite_status; ?>"
+                                                value="<?php echo $next_status; ?>"
+                                                class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md <?php echo $classes; ?>"
+                                                title="Click to mark as <?php echo ucfirst($next_status); ?>"
                                             >
-                                                <i class="fas <?php echo $is_available ? 'fa-check-circle' : 'fa-times-circle'; ?> mr-1.5"></i>
-                                                <?php echo $is_available ? 'Available' : 'Occupied'; ?>
+                                                <i class="fas <?php echo $icon; ?> mr-1.5"></i>
+                                                <?php echo $label; ?>
                                             </button>
                                         </form>
                                     </td>
+
                                 <?php endforeach; ?>
                             </tr>
                         <?php endforeach; ?>
