@@ -110,23 +110,150 @@ if (isset($_POST['submit'])) {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/js/all.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <div class="navbar">
-        <a href="student_dashboard.php">
-            <div class="logo">
-                <img src="images/CCS.png" alt="Logo">
-            </div>
-        </a>
-        <ul>
-            <li><a href="profile.php"><i class="fa-solid fa-user"></i> Profile</a></li>
-            <li><a href="announcement.php"><i class="fa-solid fa-bullhorn"></i> View Announcement</a></li>
-            <li><a href="#"><i class="fa-solid fa-calendar-check"></i> Reservation</a></li>
-            <li><a href="labrules.php"><i class="fa-solid fa-book"></i> Lab Rules</a></li>
-            <li><a href="sit_in_history.php"><i class="fa-solid fa-clock-rotate-left"></i> Sit-in History</a></li>
-            <li><a href="remaining_sessions.php"><i class="fa-solid fa-hourglass-half"></i> Remaining Session</a></li>
-            <li><a href="logout.php" onclick="confirmLogout(event)"><i class="fa-solid fa-right-from-bracket"></i> Logout</a></li>
-        </ul>
-    </div>
+<!-- Student Navigation Bar -->
+<div class="fixed top-0 left-0 right-0 bg-white shadow-md z-50">
+    <div class="flex items-center justify-between px-6 py-3">
+        <!-- CCS Logo -->
+        <div class="flex items-center">
+            <a href="student_dashboard.php">
+                <img src="images/CCS.png" alt="CCS Logo" class="h-14">
+            </a>
+        </div>
+        
+        <!-- Main Navigation Links -->
+        <nav class="hidden md:flex items-center space-x-2">
+            <a href="student_dashboard.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                Dashboard
+            </a>
 
+            <!-- Announcements -->
+            <a href="announcement.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200 flex items-center">
+                <i class="fas fa-bullhorn mr-2 text-sm"></i> Announcements
+            </a>
+            
+            <!-- Reservations -->
+            <div class="relative">
+                <button onclick="toggleDropdown('reservationsDropdown')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200 flex items-center">
+                    <i class="fas fa-calendar-check mr-2 text-sm"></i> Reservations
+                </button>
+                <div id="reservationsDropdown" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
+                    <a href="reservation.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 flex items-center">
+                        <i class="fas fa-plus-circle mr-2 text-sm"></i> New Reservation
+                    </a>
+                    <a href="reservation_history.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 flex items-center">
+                        <i class="fas fa-history mr-2 text-sm"></i> Reservation History
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Labs -->
+            <div class="relative">
+                <button onclick="toggleDropdown('labsDropdown')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200 flex items-center">
+                    <i class="fas fa-flask mr-2 text-sm"></i> Labs
+                </button>
+                <div id="labsDropdown" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
+                    <a href="labrules.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 flex items-center">
+                        <i class="fas fa-book mr-2 text-sm"></i> Lab Rules
+                    </a>
+                    <a href="sit_in_history.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 flex items-center">
+                        <i class="fas fa-clock-rotate-left mr-2 text-sm"></i> Sit-in History
+                    </a>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Mobile Menu Button (hidden on larger screens) -->
+        <div class="md:hidden">
+            <button id="mobile-menu-button" class="text-gray-700 hover:text-gray-900">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        
+        <!-- Student Info and Actions -->
+        <div class="flex items-center space-x-4">
+            <!-- Edit Profile Link -->
+            <a href="profile.php" class="hidden md:flex items-center px-3 py-1 text-gray-700 hover:bg-gray-100 rounded-md transition-all duration-200">
+                <i class="fas fa-user-edit mr-2 text-sm"></i>
+                <span class="text-sm">Edit Profile</span>
+            </a>
+            
+            <!-- Student Info -->
+            <div class="flex items-center space-x-0">
+                <!-- Student Icon -->
+                <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center">
+                    <i class="fas fa-user-graduate text-white"></i>
+                </div>
+                <!-- Student Name -->
+                <h2 class="px-4 py-2 text-gray-700 font-bold"><?php echo htmlspecialchars($student_firstname); ?></h2>
+            </div>
+
+            <!-- Logout Button -->
+            <div>
+                <a href="logout.php" onclick="confirmLogout(event)" class="flex items-center px-4 py-2 bg-red-600 text-white rounded-full border-2 border-red-700 hover:bg-red-700 transition-all duration-200 shadow-md">
+                    <i class="fas fa-sign-out-alt mr-2"></i>
+                    <span class="hidden md:inline">Log Out</span>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Mobile Menu (hidden by default) -->
+    <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-gray-200 px-6 py-3">
+        <a href="student_dashboard.php" class="block py-2 text-gray-700 flex items-center">
+            <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
+        </a>
+        
+        <a href="profile.php" class="block py-2 text-gray-700 flex items-center">
+            <i class="fas fa-user-edit mr-3"></i> Edit Profile
+        </a>
+        
+        <a href="announcement.php" class="block py-2 text-gray-700 flex items-center">
+            <i class="fas fa-bullhorn mr-3"></i> Announcements
+        </a>
+        
+        <div class="py-2">
+            <button class="flex items-center justify-between w-full text-gray-700" onclick="toggleMobileDropdown('reservations-dropdown')">
+                <div class="flex items-center">
+                    <i class="fas fa-calendar-check mr-3"></i> Reservations
+                </div>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div id="reservations-dropdown" class="hidden pl-4">
+                <a href="reservation.php" class="block py-2 text-gray-700 flex items-center">
+                    <i class="fas fa-plus-circle mr-3"></i> New Reservation
+                </a>
+                <a href="reservation_history.php" class="block py-2 text-gray-700 flex items-center">
+                    <i class="fas fa-history mr-3"></i> History
+                </a>
+            </div>
+        </div>
+        
+        <div class="py-2">
+            <button class="flex items-center justify-between w-full text-gray-700" onclick="toggleMobileDropdown('labs-dropdown')">
+                <div class="flex items-center">
+                    <i class="fas fa-flask mr-3"></i> Labs
+                </div>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div id="labs-dropdown" class="hidden pl-4">
+                <a href="labrules.php" class="block py-2 text-gray-700 flex items-center">
+                    <i class="fas fa-book mr-3"></i> Lab Rules
+                </a>
+                <a href="sit_in_history.php" class="block py-2 text-gray-700 flex items-center">
+                    <i class="fas fa-clock-rotate-left mr-3"></i> Sit-in History
+                </a>
+            </div>
+        </div>
+        
+        <a href="logout.php" onclick="confirmLogout(event)" class="block py-2 text-gray-700 flex items-center">
+            <i class="fas fa-sign-out-alt mr-3"></i> Log Out
+        </a>
+    </div>
+</div>
+
+
+
+    <!-- Main Content -->
     <div class="profile-container">
         <div class="profile-display-field">
             <h3>USER PROFILE</h3>
@@ -245,5 +372,39 @@ if (isset($_POST['submit'])) {
             </form>
         </div>
     </div>
+
+
+    <script>
+// JavaScript functions
+function toggleDropdown(id) {
+    const dropdown = document.getElementById(id);
+    dropdown.classList.toggle('hidden');
+    document.querySelectorAll('.nav-dropdown').forEach(el => {
+        if (el.id !== id) el.classList.add('hidden');
+    });
+}
+
+function toggleMobileDropdown(id) {
+    document.getElementById(id).classList.toggle('hidden');
+}
+
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.relative')) {
+        document.querySelectorAll('.nav-dropdown').forEach(el => el.classList.add('hidden'));
+    }
+});
+
+// Mobile menu toggle
+document.getElementById('mobile-menu-button').addEventListener('click', function() {
+    document.getElementById('mobile-menu').classList.toggle('hidden');
+});
+
+// Logout confirmation
+function confirmLogout(event) {
+    if (!confirm('Are you sure you want to log out?')) {
+        event.preventDefault();
+    }
+}
+</script>
 </body>
 </html>

@@ -537,9 +537,6 @@ foreach ($labs as $lab) {
                                         <?php echo $pc['status']; ?>
                                     </div>
                                     <?php if ($pc['status'] === 'Used'): ?>
-                                        <div class="mt-2 text-xs text-gray-500">
-                                            <i class="far fa-clock mr-1"></i> 2h 15m
-                                        </div>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -737,8 +734,8 @@ document.getElementById('pcModal').addEventListener('click', function(e) {
             }
         });
 
-                    //dropdown
-                    function toggleDropdown(id) {
+        //dropdown
+        function toggleDropdown(id) {
         const dropdown = document.getElementById(id);
         dropdown.classList.toggle('hidden');
         document.querySelectorAll('.nav-dropdown').forEach(el => {

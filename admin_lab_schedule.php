@@ -26,8 +26,8 @@ $day_groups = array(
     'Sat' => 'Saturday'
 );
 
-// Determine active tab from POST or default to 'MW'
-$active_tab = $_GET['tab'] ?? 'MW';
+// Determine active tab from POST, GET, SESSION or default to 'MW'
+$active_tab = $_POST['day_group'] ?? $_GET['tab'] ?? $_SESSION['active_tab'] ?? 'MW';
 
 
 // Generate time slots from 7:30 AM to 9:00 PM in 1.5 hour increments
@@ -75,10 +75,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lab'], $_POST['time_s
     $stmt->execute();
     $stmt->close();
 
-    // Optional: preserve active tab
-    $_SESSION['active_tab'] = $day_group;
 
-    header("Location: admin_lab_schedule.php");
+
+    // After processing the POST request, redirect with the current tab
+    header("Location: admin_lab_schedule.php?tab=" . urlencode($day_group));
     exit();
 }
 

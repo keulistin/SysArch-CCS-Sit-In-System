@@ -2,46 +2,37 @@
 session_start();
 include 'db.php';
 
-// Check if the user is logged in
-if (!isset($_SESSION['idno'])) {
+// Ensure only students can access
+if (!isset($_SESSION["idno"]) || $_SESSION["role"] !== "student") {
     header("Location: login.php");
     exit();
 }
 
-// Initialize variables with default values
-$firstname = $lastname = $profile_picture = $remaining_sessions = $idno = $course = $yearlevel = $email = '';
-$profile_picture = 'default_avatar.png';
+$idno = $_SESSION["idno"];
+$stmt = $conn->prepare("SELECT firstname, lastname, remaining_sessions FROM users WHERE idno = ?");
+$stmt->bind_param("s", $idno);
+$stmt->execute();
+$stmt->bind_result($firstname, $lastname, $remaining_sessions);
+$stmt->fetch();
+$stmt->close();
 
-if (isset($_SESSION['idno'])) {
-    $idno = $_SESSION['idno'];
-    
-    // Fetch student info with additional fields
-    $user_query = "SELECT firstname, lastname, profile_picture, remaining_sessions, idno, course, yearlevel, email FROM users WHERE idno = ?";
-    $stmt = $conn->prepare($user_query);
-    $stmt->bind_param("s", $idno);
-    $stmt->execute();
-    $stmt->bind_result($firstname, $lastname, $profile_picture, $remaining_sessions, $idno, $course, $yearlevel, $email);
-    $stmt->fetch();
-    $stmt->close();
+// Get today's sit-ins for this student
+$today_sitins_query = "SELECT COUNT(*) AS today_sitins FROM sit_in_records WHERE student_id = ? AND DATE(start_time) = CURDATE()";
+$today_stmt = $conn->prepare($today_sitins_query);
+$today_stmt->bind_param("s", $idno);
+$today_stmt->execute();
+$today_stmt->bind_result($today_sitins);
+$today_stmt->fetch();
+$today_stmt->close();
 
-    // Set default profile picture if none exists
-    if (empty($profile_picture)) {
-        $upload_dir = 'uploads/';
-        $images = glob($upload_dir . '*.{jpg,jpeg,png,gif}', GLOB_BRACE);
-
-        if (!empty($images)) {
-            $random_image = $images[array_rand($images)];
-            $profile_picture = basename($random_image);
-
-            $update_sql = "UPDATE users SET profile_picture = ? WHERE idno = ?";
-            if ($update_stmt = $conn->prepare($update_sql)) {
-                $update_stmt->bind_param("ss", $profile_picture, $idno);
-                $update_stmt->execute();
-                $update_stmt->close();
-            }
-        }
-    }
-}
+// Get total sit-ins for this student
+$total_sitins_query = "SELECT COUNT(*) AS total_sitins FROM sit_in_records WHERE student_id = ?";
+$total_stmt = $conn->prepare($total_sitins_query);
+$total_stmt->bind_param("s", $idno);
+$total_stmt->execute();
+$total_stmt->bind_result($total_sitins);
+$total_stmt->fetch();
+$total_stmt->close();
 ?>
 
 <!DOCTYPE html>
@@ -70,465 +61,283 @@ if (isset($_SESSION['idno'])) {
         }
     </script>
     <style>
-        .sidebar-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: #4b5563 #1e293b;
+        body {
+            background-color: #F1E6EF;
         }
-        .sidebar-scroll::-webkit-scrollbar {
-            width: 6px;
-        }
-        .sidebar-scroll::-webkit-scrollbar-track {
-            background: #1e293b;
-        }
-        .sidebar-scroll::-webkit-scrollbar-thumb {
-            background-color: #4b5563;
-            border-radius: 3px;
-        }
-        .notification-badge {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background-color: #ef4444;
-            color: white;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            font-size: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .notification-dropdown {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        .notification-item {
-            border-bottom: 1px solid #374151;
-        }
-        .notification-item:last-child {
-            border-bottom: none;
-        }
-        
-        /* NEW: Chatbot styles */
-        #chatbot-messages {
-            scrollbar-width: thin;
-            scrollbar-color: #4b5563 #1e293b;
-        }
-        #chatbot-messages::-webkit-scrollbar {
-            width: 6px;
-        }
-        #chatbot-messages::-webkit-scrollbar-track {
-            background: #1e293b;
-        }
-        #chatbot-messages::-webkit-scrollbar-thumb {
-            background-color: #4b5563;
-            border-radius: 3px;
-        }
-        .chatbot-message {
-            word-wrap: break-word;
-            max-width: 90%;
+        .main-content-cont {
+            padding: 8rem 15rem 5rem 15rem;
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-slate-800 to-slate-900 min-h-screen font-sans text-white">
-    <!-- Sidebar -->
-    <div class="fixed inset-y-0 left-0 w-64 bg-slate-900/80 backdrop-blur-md border-r border-white/10 shadow-xl z-50 flex flex-col">
-        <!-- Fixed header -->
-        <div class="p-5 border-b border-white/10 flex-shrink-0">
-            <div class="flex items-center space-x-3">
-                <!-- Profile Picture -->
-                <img 
-                    src="uploads/<?php echo htmlspecialchars($profile_picture); ?>" 
-                    alt="Profile Picture" 
-                    class="w-10 h-10 rounded-full border-2 border-white/10 object-cover"
-                    onerror="this.src='assets/default_avatar.png'"
-                >
-                <!-- First Name -->
-                <h2 class="text-xl font-semibold text-white"><?php echo htmlspecialchars($firstname); ?></h2>
-            </div>
-            <p class="text-sm text-slate-400 mt-2">Dashboard</p>
+<body class="font-sans text-black">
+<!-- Top Navigation Bar for Student -->
+<div class="fixed top-0 left-0 right-0 bg-white shadow-md z-50">
+  <div class="flex items-center justify-between px-6 py-3">
+    <!-- CCS Logo -->
+    <div class="flex items-center">
+      <img src="images/CCS.png" alt="CCS Logo" class="h-14">
+    </div>
+
+    <!-- Main Navigation Links -->
+    <nav class="hidden md:flex items-center space-x-2">
+      <a href="student_dashboard.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+        Dashboard
+      </a>
+
+      <!-- Rules Dropdown -->
+      <div class="relative group">
+        <button class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200 flex items-center">
+          Rules
+          <i class="fas fa-chevron-down ml-2 text-xs"></i>
+        </button>
+        <div class="absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden group-hover:block">
+          <a href="sit-in-rules.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">Sit-in Rules</a>
+          <a href="lab-rules.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">Lab Rules</a>
         </div>
-        
-        <!-- Scrollable navigation -->
-        <nav class="mt-5 flex-1 overflow-y-auto sidebar-scroll">
-            <ul>
-                <li>
-                    <a href="student_dashboard.php" class="flex items-center px-5 py-3 bg-slate-700/20 text-white">
-                        <span>Profile</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="edit-profile.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Edit Profile</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="announcements.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>View Announcements</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="sit-in-rules.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Sit-in Rules</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="lab-rules.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Lab Rules & Regulations</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="reservation.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Reservation</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="sit_in_history.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Sit-in History</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="upload_resources.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>View Lab Resources</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="student_leaderboard.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Leaderboard</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="student_lab_schedule.php" class="flex items-center px-5 py-3 text-slate-300 hover:bg-slate-700/20 hover:text-white transition-all duration-200">
-                        <span>Lab Schedule</span>
-                    </a>
-                </li>
-            </ul>
-        </nav>
-        
-        <!-- Fixed footer with logout -->
-        <div class="p-5 border-t border-white/10 flex-shrink-0">
-            <a href="logout.php" onclick="return confirm('Are you sure you want to log out?')" class="flex items-center px-5 py-3 text-slate-300 hover:bg-red-600/20 hover:text-red-400 transition-all duration-200">
-                <span>Log Out</span>
+      </div>
+
+      <!-- Sit-ins Dropdown -->
+      <div class="relative group">
+        <button class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200 flex items-center">
+          Sit-ins
+          <i class="fas fa-chevron-down ml-2 text-xs"></i>
+        </button>
+        <div class="absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden group-hover:block">
+          <a href="reservation.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">Reservation</a>
+          <a href="sit_in_history.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">History</a>
+        </div>
+      </div>
+
+      <!-- Resources Dropdown -->
+      <div class="relative group">
+        <button class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200 flex items-center">
+          Resources
+          <i class="fas fa-chevron-down ml-2 text-xs"></i>
+        </button>
+        <div class="absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden group-hover:block">
+          <a href="upload_resources.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">View Resources</a>
+          <a href="student_leaderboard.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">Leaderboard</a>
+          <a href="student_lab_schedule.php" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">Lab Schedule</a>
+        </div>
+      </div>
+
+      <!-- Announcements -->
+      <a href="announcements.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+        Announcements
+      </a>
+
+      <!-- Edit Profile -->
+      <a href="edit-profile.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+        Edit Profile
+      </a>
+    </nav>
+
+    <!-- User Avatar and Logout -->
+    <div class="flex items-center space-x-4">
+      <!-- Avatar -->
+      <div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center">
+        <img 
+          src="uploads/<?php echo htmlspecialchars($profile_picture); ?>" 
+          alt="Avatar" 
+          class="w-10 h-10 rounded-full object-cover border-2 border-purple-700"
+          onerror="this.src='assets/default_avatar.png'"
+        >
+      </div>
+      <h2 class="px-4 py-2 text-gray-700 font-bold"><?php echo htmlspecialchars($firstname); ?></h2>
+
+      <!-- Logout -->
+        <div class="ml-4">
+            
+            <a href="logout.php" class="flex items-center px-4 py-2 bg-purple-600 text-white rounded-full border-2 border-purple-700 hover:bg-purple-700 transition-all duration-200 shadow-md">
+            <i class="fas fa-sign-out-alt mr-2"></i>
+            <span class="hidden md:inline">Log Out</span>
             </a>
         </div>
     </div>
+  </div>
+</div>
 
-    <!-- Main Content -->
-    <div class="ml-64 p-6">
-        <div class="bg-slate-800/50 backdrop-blur-sm rounded-xl shadow-lg border border-white/5 p-6 hover:shadow-xl transition-all duration-300">
-            <!-- Profile Section - Side-aligned Single Column -->
-            <div class="flex flex-col md:flex-row gap-6 mb-8">
-                <!-- Profile Picture (centered) -->
-                <div class="flex justify-center md:justify-start">
-                    <img 
-                        src="uploads/<?php echo htmlspecialchars($profile_picture); ?>" 
-                        alt="Profile Picture" 
-                        class="w-32 h-32 rounded-full border-4 border-white/10 object-cover"
-                        onerror="this.src='assets/default_avatar.png'"
-                    >
-                </div>
-                
-                <!-- Information in single column on the side -->
-                <div class="flex-1">
-                    <div class="flex justify-between items-start">
-                        <h2 class="text-2xl font-semibold mb-4 text-white">Welcome, <?php echo htmlspecialchars($firstname . " " . $lastname); ?>! 👋</h2>
-                        <!-- Notification Button - Aligned to the right of the welcome message -->
-                        <div class="relative">
-                            <button id="notificationButton" class="text-white hover:text-blue-300 focus:outline-none">
-                                <i class="fas fa-bell text-xl"></i>
-                                <span class="notification-badge hidden">0</span>
-                            </button>
-                            <!-- Notification Dropdown -->
-                            <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-md shadow-lg z-50 border border-white/10 notification-dropdown">
-                                <div class="p-2 border-b border-white/10 flex justify-between items-center">
-                                    <span class="font-semibold">Notifications</span>
-                                    <button id="markAllRead" class="text-xs text-blue-400 hover:text-blue-300">Mark all as read</button>
-                                </div>
-                                <div id="notificationList" class="divide-y divide-white/10">
-                                    <!-- Notifications will be loaded here -->
-                                    <div class="p-3 text-center text-slate-400">No notifications</div>
-                                </div>
-                            </div>
-                        </div>
+
+    <!-- Main Content - Student Dashboard -->
+    <div class="min-h-screen bg-purple-100 main-content-cont">
+        <!-- Welcome Header -->
+        <div class="mb-12">
+            <div class="flex items-center mb-2">
+                <h2 class="text-3xl font-medium text-gray-800 tracking-tight">Welcome, <?php echo htmlspecialchars($firstname); ?>!</h2>
+            </div>
+            <p class="text-gray-500 font-light">Track your lab sessions and reservations</p>
+            <div class="w-16 h-1 bg-gradient-to-r from-purple-400 to-indigo-500 mt-4 rounded-full"></div>
+        </div>
+        
+        <!-- Statistics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+            <!-- Remaining Sessions Card -->
+            <div class="bg-white p-8 rounded-lg border border-gray-100 shadow-xs hover:shadow-sm transition-all duration-300 transform hover:-translate-y-1">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500 uppercase tracking-wider">Remaining Sessions</p>
+                        <h3 class="text-5xl font-light text-gray-800 mt-2"><?php echo $remaining_sessions; ?></h3>
+                        <p class="text-sm text-gray-500 mt-1">out of 10 weekly sessions</p>
                     </div>
-                    
-                    <div class="space-y-3 text-sm text-slate-300">
-                        <div><strong>ID:</strong> <?php echo htmlspecialchars($idno); ?></div>
-                        <div><strong>Year Level:</strong> <?php echo htmlspecialchars($yearlevel); ?></div>
-                        <div><strong>Course:</strong> <?php echo htmlspecialchars($course); ?></div>
-                        <div><strong>Email:</strong> <?php echo htmlspecialchars($email); ?></div>
+                    <div class="p-3 rounded-full bg-purple-50 text-purple-600">
+                        <i class="fas fa-hourglass-half text-xl"></i>
                     </div>
                 </div>
             </div>
-
-            <!-- Dashboard Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-slate-700/50 p-6 rounded-lg hover:bg-slate-700/70 transition-all duration-200">
-                    <h4 class="text-lg font-semibold mb-2">Remaining Sessions</h4>
-                    <p class="text-2xl font-bold"><?php echo htmlspecialchars($remaining_sessions); ?></p>
+            
+            <!-- Today's Sit-ins Card -->
+            <div class="bg-white p-8 rounded-lg border border-gray-100 shadow-xs hover:shadow-sm transition-all duration-300 transform hover:-translate-y-1">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500 uppercase tracking-wider">Today's Sit-ins</p>
+                        <h3 class="text-5xl font-light text-gray-800 mt-2"><?php echo $today_sitins; ?></h3>
+                        <p class="text-sm text-gray-500 mt-1"><?php echo date("F j, Y"); ?></p>
+                    </div>
+                    <div class="p-3 rounded-full bg-blue-50 text-blue-600">
+                        <i class="fas fa-laptop-code text-xl"></i>
+                    </div>
                 </div>
-                <div class="bg-slate-700/50 p-6 rounded-lg hover:bg-slate-700/70 transition-all duration-200">
-                    <h4 class="text-lg font-semibold mb-2">Reservation</h4>
-                    <a href="reservation.php" class="text-blue-400 hover:text-blue-300">Reserve Now</a>
-                </div>
-                <div class="bg-slate-700/50 p-6 rounded-lg hover:bg-slate-700/70 transition-all duration-200">
-                    <h4 class="text-lg font-semibold mb-2">Sit-in History</h4>
-                    <a href="sit_in_history.php" class="text-blue-400 hover:text-blue-300">View History</a>
+            </div>
+            
+            <!-- Total Sit-ins Card -->
+            <div class="bg-white p-8 rounded-lg border border-gray-100 shadow-xs hover:shadow-sm transition-all duration-300 transform hover:-translate-y-1">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Sit-ins</p>
+                        <h3 class="text-5xl font-light text-gray-800 mt-2"><?php echo $total_sitins; ?></h3>
+                        <p class="text-sm text-gray-500 mt-1">all-time sessions</p>
+                    </div>
+                    <div class="p-3 rounded-full bg-green-50 text-green-600">
+                        <i class="fas fa-clock-rotate-left text-xl"></i>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- NEW: Chatbot Container -->
-    <div id="chatbot-container" class="fixed bottom-6 right-6 z-50">
-        <!-- Chatbot Button -->
-        <button id="chatbot-toggle" class="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-all duration-300">
-            <i class="fas fa-robot text-2xl"></i>
-        </button>
-        
-        <!-- Chatbot Window (hidden by default) -->
-        <div id="chatbot-window" class="hidden w-80 h-[500px] bg-slate-800 rounded-lg shadow-xl border border-white/10 flex flex-col absolute bottom-16 right-0">
-            <!-- Chatbot Header -->
-            <div class="bg-slate-700/50 p-3 rounded-t-lg flex items-center justify-between">
-                <div class="flex items-center space-x-2">
-                    <i class="fas fa-robot text-blue-400"></i>
-                    <h3 class="font-semibold">Lab Assistant</h3>
+        <!-- Quick Actions Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+
+            
+            <!-- New Reservation Card -->
+            <div class="bg-white rounded-xl shadow-xs border border-gray-100 p-8 hover:shadow-sm transition-all duration-300">
+                <div class="mb-6">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                            <i class="fas fa-calendar-check text-sm"></i>
+                        </div>
+                        <h4 class="text-xl font-medium text-gray-800 tracking-tight">Lab Reservation</h4>
+                    </div>
+                    <p class="text-gray-500 font-light pl-11">Book a lab in advance</p>
                 </div>
-                <button id="chatbot-close" class="text-slate-300 hover:text-white">
-                    <i class="fas fa-times"></i>
-                </button>
+                
+                <a href="reservation.php" class="w-full flex items-center justify-center px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg hover:from-green-700 hover:to-green-600 transition-all duration-200 shadow-sm">
+                    <i class="fas fa-calendar-plus mr-2"></i> Make Reservation
+                </a>
+            </div>
+        </div>
+
+        <!-- Recent Activity Section -->
+        <div class="bg-white rounded-xl shadow-xs border border-gray-100 p-8">
+            <div class="mb-6">
+                <div class="flex items-center mb-3">
+                    <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 mr-3">
+                        <i class="fas fa-history text-sm"></i>
+                    </div>
+                    <h4 class="text-xl font-medium text-gray-800 tracking-tight">Recent Activity</h4>
+                </div>
+                <p class="text-gray-500 font-light pl-11">Your recent lab sessions</p>
             </div>
             
-            <!-- Chat Messages Area -->
-            <div id="chatbot-messages" class="flex-1 p-4 overflow-y-auto space-y-3">
-                <!-- Welcome message -->
-                <div class="chatbot-message bg-slate-700/50 rounded-lg p-3 text-sm">
-                    <p>Hello <?php echo htmlspecialchars($firstname); ?>! I'm your Lab Assistant. How can I help you today?</p>
-                    <p class="text-xs text-slate-400 mt-1">Here are some things you can ask:</p>
-                    <ul class="text-xs text-blue-300 mt-1 list-disc list-inside">
-                        <li>How do I make a reservation?</li>
-                        <li>What are the lab rules?</li>
-                        <li>When is the lab open?</li>
-                    </ul>
-                </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Date</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Lab</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Purpose</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Duration</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        // Get recent sit-ins
+                        $recent_query = "SELECT lab, purpose, start_time, end_time 
+                                        FROM sit_in_records 
+                                        WHERE student_id = ? 
+                                        ORDER BY start_time DESC 
+                                        LIMIT 5";
+                        $recent_stmt = $conn->prepare($recent_query);
+                        $recent_stmt->bind_param("s", $idno);
+                        $recent_stmt->execute();
+                        $recent_result = $recent_stmt->get_result();
+                        
+                        if ($recent_result->num_rows > 0) {
+                            while ($row = $recent_result->fetch_assoc()) {
+                                $start_time = new DateTime($row['start_time']);
+                                $end_time = $row['end_time'] ? new DateTime($row['end_time']) : null;
+                                $duration = $end_time ? $start_time->diff($end_time)->format('%Hh %Im') : 'Active';
+                                $status = $end_time ? 'Completed' : 'Active';
+                                
+                                echo "<tr class='border-t border-gray-100 hover:bg-gray-50'>";
+                                echo "<td class='p-3'>".$start_time->format('M j, Y')."</td>";
+                                echo "<td class='p-3'>".htmlspecialchars($row['lab'])."</td>";
+                                echo "<td class='p-3'>".htmlspecialchars($row['purpose'])."</td>";
+                                echo "<td class='p-3'>".$duration."</td>";
+                                echo "<td class='p-3'><span class='px-2 py-1 text-xs rounded-full ".
+                                    ($status == 'Active' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800')."'>".
+                                    $status."</span></td>";
+                                echo "</tr>";
+                            }
+                        } else {
+                            echo "<tr><td colspan='5' class='p-4 text-center text-gray-500'>No recent activity found</td></tr>";
+                        }
+                        $recent_stmt->close();
+                        ?>
+                    </tbody>
+                </table>
             </div>
             
-            <!-- Chat Input Area -->
-            <div class="p-3 border-t border-white/10">
-                <form id="chatbot-form" class="flex space-x-2">
-                    <input 
-                        type="text" 
-                        id="chatbot-input" 
-                        placeholder="Type your question..." 
-                        class="flex-1 bg-slate-700/50 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        autocomplete="off"
-                    >
-                    <button 
-                        type="submit" 
-                        class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm"
-                    >
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </form>
+            <div class="mt-4 text-right">
+                <a href="sit_in_history.php" class="text-sm text-purple-600 hover:text-purple-800">View full history →</a>
             </div>
         </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const notificationButton = document.getElementById('notificationButton');
-            const notificationDropdown = document.getElementById('notificationDropdown');
-            const notificationBadge = document.querySelector('.notification-badge');
-            
-            // Toggle notification dropdown
-            notificationButton.addEventListener('click', function(e) {
-                e.stopPropagation();
-                notificationDropdown.classList.toggle('hidden');
-                loadNotifications();
-            });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function() {
-                notificationDropdown.classList.add('hidden');
-            });
-            
-            // Prevent dropdown from closing when clicking inside
-            notificationDropdown.addEventListener('click', function(e) {
-                e.stopPropagation();
-            });
-            
-            // Mark all as read
-            document.getElementById('markAllRead').addEventListener('click', function() {
-                markAllNotificationsAsRead();
-            });
-            
-            // Function to load notifications
-            function loadNotifications() {
-                fetch('get_notifications.php')
-                    .then(response => response.json())
-                    .then(data => {
-                        const notificationList = document.getElementById('notificationList');
-                        
-                        if (data.length === 0) {
-                            notificationList.innerHTML = '<div class="p-3 text-center text-slate-400">No notifications</div>';
-                            notificationBadge.classList.add('hidden');
-                            return;
-                        }
-                        
-                        notificationList.innerHTML = '';
-                        let unreadCount = 0;
-                        
-                        data.forEach(notification => {
-                            const notificationItem = document.createElement('div');
-                            notificationItem.className = `p-3 notification-item ${notification.is_read ? 'text-slate-400' : 'text-white bg-slate-700/50'}`;
-                            notificationItem.innerHTML = `
-                                <div class="flex justify-between items-start">
-                                    <div class="flex-1">
-                                        <p class="text-sm">${notification.message}</p>
-                                        <p class="text-xs text-slate-400 mt-1">${notification.created_at}</p>
-                                    </div>
-                                    ${notification.is_read ? '' : '<span class="w-2 h-2 rounded-full bg-blue-500 ml-2"></span>'}
-                                </div>
-                            `;
-                            notificationList.appendChild(notificationItem);
-                            
-                            if (!notification.is_read) {
-                                unreadCount++;
-                            }
-                        });
-                        
-                        if (unreadCount > 0) {
-                            notificationBadge.textContent = unreadCount;
-                            notificationBadge.classList.remove('hidden');
-                        } else {
-                            notificationBadge.classList.add('hidden');
-                        }
-                    });
-            }
-            
-            // Function to mark all notifications as read
-            function markAllNotificationsAsRead() {
-                fetch('mark_notifications_read.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        loadNotifications();
-                    }
-                });
-            }
-            
-            // Load notifications on page load
-            loadNotifications();
+// Dropdown toggle functions
+function toggleDropdown(id) {
+    const dropdown = document.getElementById(id);
+    dropdown.classList.toggle('hidden');
+    // Hide other dropdowns
+    document.querySelectorAll('.nav-dropdown').forEach(el => {
+        if (el.id !== id) el.classList.add('hidden');
+    });
+}
 
-            // Check for new notifications every 30 seconds
-            setInterval(loadNotifications, 30000);
+function toggleMobileDropdown(id) {
+    document.getElementById(id).classList.toggle('hidden');
+}
 
-            // NEW: Chatbot functionality
-            const chatbotToggle = document.getElementById('chatbot-toggle');
-            const chatbotWindow = document.getElementById('chatbot-window');
-            const chatbotClose = document.getElementById('chatbot-close');
-            const chatbotForm = document.getElementById('chatbot-form');
-            const chatbotInput = document.getElementById('chatbot-input');
-            const chatbotMessages = document.getElementById('chatbot-messages');
-            
-            // Toggle chatbot window
-            chatbotToggle.addEventListener('click', function() {
-                chatbotWindow.classList.toggle('hidden');
-            });
-            
-            // Close chatbot window
-            chatbotClose.addEventListener('click', function() {
-                chatbotWindow.classList.add('hidden');
-            });
-            
-            // Handle form submission
-            chatbotForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const message = chatbotInput.value.trim();
-                
-                if (message) {
-                    // Add user message to chat
-                    addMessage(message, 'user');
-                    chatbotInput.value = '';
-                    
-                    // Process the message and get bot response
-                    processMessage(message);
-                }
-            });
-            
-            // Add a message to the chat
-            function addMessage(text, sender) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `chatbot-message ${sender === 'user' ? 'bg-blue-600/50 ml-8' : 'bg-slate-700/50 mr-8'} rounded-lg p-3 text-sm`;
-                messageDiv.innerHTML = `<p>${text}</p>`;
-                chatbotMessages.appendChild(messageDiv);
-                chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
-            }
-            
-            // Process user message and generate response
-            function processMessage(message) {
-                // Show typing indicator
-                const typingIndicator = document.createElement('div');
-                typingIndicator.className = 'chatbot-message bg-slate-700/50 mr-8 rounded-lg p-3 text-sm';
-                typingIndicator.innerHTML = '<p class="italic">Lab Assistant is typing...</p>';
-                chatbotMessages.appendChild(typingIndicator);
-                chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
-                
-                // Remove typing indicator after delay
-                setTimeout(() => {
-                    typingIndicator.remove();
-                    
-                    // Generate response based on user message
-                    const response = generateResponse(message.toLowerCase());
-                    
-                    // Add bot response to chat
-                    addMessage(response, 'bot');
-                }, 1000);
-            }
-            
-            // Simple response generation (you can expand this)
-            function generateResponse(message) {
-                // Reservation related questions
-                if (message.includes('reserve') || message.includes('reservation') || message.includes('book')) {
-                    return "You can make a reservation by going to the 'Reservation' page in the sidebar. There you can select a date, time, and computer station. You have <?php echo htmlspecialchars($remaining_sessions); ?> sessions remaining.";
-                }
-                
-                // Lab rules questions
-                else if (message.includes('rule') || message.includes('regulation')) {
-                    return "You can find all lab rules and regulations on the 'Lab Rules & Regulations' page in the sidebar. This includes policies on food/drinks, equipment use, and behavior guidelines.";
-                }
-                
-                // Schedule questions
-                else if (message.includes('schedule') || message.includes('open') || message.includes('time')) {
-                    return "The lab schedule is available on the 'Lab Schedule' page. Typically, the lab is open from 7:30 AM to 9:00 PM on Monday to Saturday.";
-                }
-                
-                // Sit-in questions
-                else if (message.includes('sit-in') || message.includes('sit in')) {
-                    return "Sit-in sessions allow you to use the lab without a reservation when seats are available. Check the 'Sit-in Rules' page for details. Your history is available under 'Sit-in History'.";
-                }
-                
-                // Resources questions
-                else if (message.includes('resource') || message.includes('material') || message.includes('file')) {
-                    return "Available lab resources can be found on the 'View Lab Resources' page. This includes software, manuals, and course materials.";
-                }
-                
-                // Greetings
-                else if (message.includes('hi') || message.includes('hello') || message.includes('hey')) {
-                    return "Hello <?php echo htmlspecialchars($firstname); ?>! How can I help you with the computer lab today?";
-                }
-                
-                // Default response
-                else {
-                    return "I'm not sure I understand. You can ask me about reservations, lab rules, schedules, or sit-in sessions. Try asking something like 'How do I make a reservation?'";
-                }
-            }
-        });
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.relative')) {
+        document.querySelectorAll('.nav-dropdown').forEach(el => el.classList.add('hidden'));
+    }
+});
+
+// Mobile menu toggle
+document.getElementById('mobile-menu-button').addEventListener('click', function() {
+    document.getElementById('mobile-menu').classList.toggle('hidden');
+});
+
+// Logout confirmation
+function confirmLogout(event) {
+    if (!confirm('Are you sure you want to log out?')) {
+        event.preventDefault();
+    }
+}
+
     </script>
 </body>
 </html>
