@@ -1,6 +1,6 @@
 <?php
 session_start();
-include 'db.php'; // Make sure this path is correct
+include 'db.php';
 
 // Check if user is logged in as student
 if (!isset($_SESSION['idno']) || $_SESSION['role'] !== 'student') {
@@ -9,236 +9,143 @@ if (!isset($_SESSION['idno']) || $_SESSION['role'] !== 'student') {
 }
 
 // Set page title
-$page_title = "Make a Reservation";
+$page_title = "Reservation";
 
 // Get student info
-$idno_session = $_SESSION['idno'];
-$student_id = null; // Will be fetched
-$firstname = 'Student'; // Default
-$lastname = '';
-$remaining_sessions = 0;
-$profile_picture_nav = 'default_avatar.png';
+$idno = $_SESSION['idno'];
+$stmt = $conn->prepare("SELECT id, firstname, lastname, remaining_sessions, profile_picture FROM users WHERE idno = ?");
+$stmt->bind_param("s", $idno);
+$stmt->execute();
+$stmt->bind_result($student_id, $firstname, $lastname, $remaining_sessions, $profile_picture);
+$stmt->fetch();
+$stmt->close();
 
-$stmt_user = $conn->prepare("SELECT id, firstname, lastname, remaining_sessions, profile_picture, survey_completed FROM users WHERE idno = ?");
-if ($stmt_user) {
-    $stmt_user->bind_param("s", $idno_session);
-    $stmt_user->execute();
-    $stmt_user->bind_result($fetched_student_id, $fetched_firstname, $fetched_lastname, $fetched_remaining_sessions, $fetched_profile_picture, $fetched_survey_completed);
-    if ($stmt_user->fetch()) {
-        $student_id = $fetched_student_id;
-        $firstname = $fetched_firstname;
-        $lastname = $fetched_lastname;
-        $remaining_sessions = $fetched_remaining_sessions ?? 0;
-        $profile_picture_nav = !empty($fetched_profile_picture) ? $fetched_profile_picture : 'default_avatar.png';
-        $survey_completed = (bool)$fetched_survey_completed;
-    }
-    $stmt_user->close();
-} else {
-    error_log("Error preparing student info query: " . $conn->error);
-    // Handle error appropriately, maybe redirect or show error
+// Set default profile picture if none exists
+if (empty($profile_picture)) {
+    $profile_picture = "default_avatar.png";
 }
 
-// Get total sit-ins count (needed for survey trigger)
+// Check if student has completed the satisfaction survey
+$survey_completed = false;
+$stmt = $conn->prepare("SELECT survey_completed FROM users WHERE idno = ?");
+$stmt->bind_param("s", $idno);
+$stmt->execute();
+$stmt->bind_result($survey_completed);
+$stmt->fetch();
+$stmt->close();
+
+// Get total sit-ins count
 $total_sitins = 0;
-if ($student_id) { // Only query if student_id is known
-    $stmt_total_sitins = $conn->prepare("SELECT COUNT(*) FROM sit_in_records WHERE student_id = ?");
-    if ($stmt_total_sitins) {
-        $stmt_total_sitins->bind_param("i", $student_id);
-        $stmt_total_sitins->execute();
-        $stmt_total_sitins->bind_result($total_sitins_count);
-        if($stmt_total_sitins->fetch()){
-            $total_sitins = $total_sitins_count;
-        }
-        $stmt_total_sitins->close();
-    } else {
-        error_log("Error preparing total sit-ins query: " . $conn->error);
-    }
-}
+$stmt = $conn->prepare("SELECT COUNT(*) FROM sit_in_records WHERE student_id = ?");
+$stmt->bind_param("i", $student_id);
+$stmt->execute();
+$stmt->bind_result($total_sitins);
+$stmt->fetch();
+$stmt->close();
 
 // Check for pending reservations
 $pending_reservations = 0;
-if ($student_id) {
-    $stmt_pending = $conn->prepare("SELECT COUNT(*) FROM reservations WHERE student_id = ? AND status = 'pending'");
-    if ($stmt_pending) {
-        $stmt_pending->bind_param("i", $student_id);
-        $stmt_pending->execute();
-        $stmt_pending->bind_result($pending_reservations_count);
-        if($stmt_pending->fetch()){
-            $pending_reservations = $pending_reservations_count;
-        }
-        $stmt_pending->close();
-    } else {
-        error_log("Error preparing pending reservations query: " . $conn->error);
-    }
-}
+$stmt = $conn->prepare("SELECT COUNT(*) FROM reservations WHERE student_id = ? AND status = 'pending'");
+$stmt->bind_param("i", $student_id);
+$stmt->execute();
+$stmt->bind_result($pending_reservations);
+$stmt->fetch();
+$stmt->close();
 
-
-// Get PC availability data for select options
-$lab_pcs_summary = [];
+// Get PC availability data
+$lab_pcs = [];
 $labs = ['Lab 517', 'Lab 524', 'Lab 526', 'Lab 528', 'Lab 530', 'Lab 542', 'Lab 544'];
+
 foreach ($labs as $lab) {
-    $stmt_lab_avail = $conn->prepare("SELECT COUNT(CASE WHEN status = 'Available' THEN 1 END) as available_count FROM lab_pcs WHERE lab_name = ?");
-    if ($stmt_lab_avail) {
-        $stmt_lab_avail->bind_param("s", $lab);
-        $stmt_lab_avail->execute();
-        $stmt_lab_avail->bind_result($available_count);
-        $stmt_lab_avail->fetch();
-        $lab_pcs_summary[$lab] = ['available' => $available_count ?? 0];
-        $stmt_lab_avail->close();
-    } else {
-        error_log("Error preparing lab PC summary query for $lab: " . $conn->error);
-        $lab_pcs_summary[$lab] = ['available' => 0]; // Default if query fails
-    }
+    $stmt = $conn->prepare("SELECT COUNT(*) as total, 
+                           SUM(CASE WHEN status = 'Available' THEN 1 ELSE 0 END) as available,
+                           SUM(CASE WHEN status = 'Used' THEN 1 ELSE 0 END) as used,
+                           SUM(CASE WHEN status = 'Maintenance' THEN 1 ELSE 0 END) as maintenance
+                           FROM lab_pcs WHERE lab_name = ?");
+    $stmt->bind_param("s", $lab);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $lab_pcs[$lab] = $result->fetch_assoc();
+    $stmt->close();
 }
 
 // Handle survey submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_survey'])) {
-    if ($student_id) {
-        $satisfaction = isset($_POST['satisfaction']) ? intval($_POST['satisfaction']) : 0;
-        $comments = isset($_POST['comments']) ? trim($_POST['comments']) : '';
+    $satisfaction = isset($_POST['satisfaction']) ? intval($_POST['satisfaction']) : 0;
+    $comments = isset($_POST['comments']) ? trim($_POST['comments']) : '';
+    
+    if ($satisfaction > 0) {
+        // Insert survey response
+        $stmt = $conn->prepare("INSERT INTO satisfaction_surveys (student_id, satisfaction, comments) VALUES (?, ?, ?)");
+        $stmt->bind_param("iis", $student_id, $satisfaction, $comments);
+        $stmt->execute();
+        $stmt->close();
         
-        if ($satisfaction >= 1 && $satisfaction <= 5) {
-            $stmt_insert_survey = $conn->prepare("INSERT INTO satisfaction_surveys (student_id, satisfaction_rating, comments) VALUES (?, ?, ?)");
-            if ($stmt_insert_survey) {
-                $stmt_insert_survey->bind_param("iis", $student_id, $satisfaction, $comments);
-                if ($stmt_insert_survey->execute()) {
-                    $stmt_update_user = $conn->prepare("UPDATE users SET survey_completed = 1 WHERE id = ?");
-                    if ($stmt_update_user) {
-                        $stmt_update_user->bind_param("i", $student_id);
-                        $stmt_update_user->execute();
-                        $stmt_update_user->close();
-                        $survey_completed = true; // Update local variable
-                        $_SESSION['success_message_survey'] = "Thank you for your feedback!";
-                    } else {
-                         $_SESSION['error_message_survey'] = "Error updating survey status.";
-                    }
-                } else {
-                     $_SESSION['error_message_survey'] = "Error submitting survey.";
-                }
-                $stmt_insert_survey->close();
-            } else {
-                $_SESSION['error_message_survey'] = "Database error preparing survey insert.";
-            }
-        } else {
-            $_SESSION['error_message_survey'] = "Please select a satisfaction rating.";
-        }
+        // Mark survey as completed
+        $stmt = $conn->prepare("UPDATE users SET survey_completed = 1 WHERE id = ?");
+        $stmt->bind_param("i", $student_id);
+        $stmt->execute();
+        $stmt->close();
+        
+        $survey_completed = true;
     }
-    header("Location: reservation.php"); // Refresh to show messages and updated state
-    exit();
 }
 
 // Handle reservation form submission
-$error_reservation = '';
-$success_reservation = '';
-// Retain form values on error
-$form_purpose = $_POST['purpose'] ?? '';
-$form_lab_room = $_POST['lab_room'] ?? '';
-$form_reservation_date = $_POST['reservation_date'] ?? '';
-$form_time_in = $_POST['time_in'] ?? '';
-$form_pc_number = $_POST['pc_number'] ?? '';
+$error = '';
+$success = '';
 
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reservation'])) {
-    if (!$student_id) {
-        $error_reservation = "User information not found. Please try logging in again.";
-    } elseif ($pending_reservations > 0) {
-        $error_reservation = 'You already have a pending reservation. Please wait for it to be processed.';
-    } elseif ($total_sitins >= 10 && !$survey_completed) {
-        $error_reservation = 'Please complete the satisfaction survey before making new reservations.';
-    } elseif ($remaining_sessions <= 0) {
-        $error_reservation = 'You have no remaining sit-in sessions left for this week.';
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit'])) {
+    // Check if student has pending reservations
+    if ($pending_reservations > 0) {
+        $error = 'You already have a pending reservation. Please wait for it to be processed before making a new one.';
     } else {
-        $purpose = trim($_POST['purpose'] ?? '');
-        $lab_room = trim($_POST['lab_room'] ?? '');
-        $reservation_date_str = trim($_POST['reservation_date'] ?? '');
-        $time_in_str = trim($_POST['time_in'] ?? '');
-        $pc_number_val = trim($_POST['pc_number'] ?? '');
-
-        if (empty($purpose) || empty($lab_room) || empty($reservation_date_str) || empty($time_in_str)) {
-            $error_reservation = 'Purpose, Lab, Date, and Time In are required fields.';
+        // Initialize variables with empty values
+        $purpose = isset($_POST['purpose']) ? trim($_POST['purpose']) : '';
+        $lab_room = isset($_POST['lab_room']) ? trim($_POST['lab_room']) : '';
+        $reservation_date = isset($_POST['reservation_date']) ? trim($_POST['reservation_date']) : '';
+        $time_in = isset($_POST['time_in']) ? trim($_POST['time_in']) : '';
+        $pc_number = isset($_POST['pc_number']) ? trim($_POST['pc_number']) : '';
+        
+        // Validate inputs
+        if (empty($purpose) || empty($lab_room) || empty($reservation_date) || empty($time_in)) {
+            $error = 'All fields are required!';
+        } elseif ($remaining_sessions <= 0) {
+            $error = 'You have no remaining sessions left!';
         } else {
-            // Validate date and time format and ensure it's not in the past
-            try {
-                $reservation_datetime = new DateTime($reservation_date_str . ' ' . $time_in_str);
-                $now = new DateTime();
-                if ($reservation_datetime < $now) {
-                    $error_reservation = 'Reservation date and time cannot be in the past.';
-                }
-            } catch (Exception $e) {
-                $error_reservation = 'Invalid date or time format.';
-            }
-
-            if (empty($error_reservation) && !empty($pc_number_val)) {
-                $stmt_pc_check = $conn->prepare("SELECT status FROM lab_pcs WHERE lab_name = ? AND pc_number = ?");
-                if ($stmt_pc_check) {
-                    $stmt_pc_check->bind_param("si", $lab_room, $pc_number_val);
-                    $stmt_pc_check->execute();
-                    $stmt_pc_check->bind_result($pc_status);
-                    if ($stmt_pc_check->fetch() && $pc_status !== 'Available') {
-                        $error_reservation = 'The selected PC ('.$pc_number_val.') in '.$lab_room.' is not available at this moment. Please try another or proceed without selecting a PC.';
-                    }
-                    $stmt_pc_check->close();
-                } else {
-                     $error_reservation = 'Error checking PC status.';
+            // Check if selected PC is available (if one was selected)
+            if (!empty($pc_number)) {
+                $stmt = $conn->prepare("SELECT status FROM lab_pcs WHERE lab_name = ? AND pc_number = ?");
+                $stmt->bind_param("si", $lab_room, $pc_number);
+                $stmt->execute();
+                $stmt->bind_result($pc_status);
+                $stmt->fetch();
+                $stmt->close();
+                
+                if ($pc_status !== 'Available') {
+                    $error = 'The selected PC is not available!';
                 }
             }
             
-            if (empty($error_reservation)) {
-                $stmt_insert_res = $conn->prepare("INSERT INTO reservations (student_id, purpose, lab_room, pc_number, reservation_date, time_in, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
-                $db_pc_number = empty($pc_number_val) ? NULL : (int)$pc_number_val;
-                if ($stmt_insert_res) {
-                    $stmt_insert_res->bind_param("isssis", $student_id, $purpose, $lab_room, $db_pc_number, $reservation_date_str, $time_in_str);
-                    if ($stmt_insert_res->execute()) {
-                        $_SESSION['success_message_reservation'] = 'Reservation submitted successfully! It is now pending admin approval.';
-                        // Clear form values by redirecting
-                        header("Location: reservation.php");
-                        exit();
-                    } else {
-                        $error_reservation = 'Error submitting reservation: ' . $stmt_insert_res->error;
-                    }
-                    $stmt_insert_res->close();
+            if (empty($error)) {
+                // Insert reservation
+                $stmt = $conn->prepare("INSERT INTO reservations (student_id, purpose, lab_room, pc_number, reservation_date, time_in) VALUES (?, ?, ?, ?, ?, ?)");
+                $pc_number = empty($pc_number) ? NULL : $pc_number;
+                $stmt->bind_param("isssss", $student_id, $purpose, $lab_room, $pc_number, $reservation_date, $time_in);
+                
+                if ($stmt->execute()) {
+                    $success = 'Reservation submitted successfully! Waiting for admin approval.';
+                    // Clear form values after successful submission
+                    $purpose = $lab_room = $reservation_date = $time_in = $pc_number = '';
+                    // Update pending reservations count
+                    $pending_reservations = 1;
                 } else {
-                    $error_reservation = 'Database error preparing reservation insert: ' . $conn->error;
+                    $error = 'Error submitting reservation: ' . $conn->error;
                 }
+                $stmt->close();
             }
         }
     }
-    // If errors occurred, set session message to display after redirect
-    if (!empty($error_reservation)) {
-        $_SESSION['error_message_reservation'] = $error_reservation;
-        // Preserve form values for redirection
-        $_SESSION['form_values_reservation'] = $_POST;
-        header("Location: reservation.php");
-        exit();
-    }
-}
-
-// Retrieve form values from session if they exist (after a failed POST attempt)
-if (isset($_SESSION['form_values_reservation'])) {
-    $form_purpose = $_SESSION['form_values_reservation']['purpose'] ?? '';
-    $form_lab_room = $_SESSION['form_values_reservation']['lab_room'] ?? '';
-    $form_reservation_date = $_SESSION['form_values_reservation']['reservation_date'] ?? '';
-    $form_time_in = $_SESSION['form_values_reservation']['time_in'] ?? '';
-    $form_pc_number = $_SESSION['form_values_reservation']['pc_number'] ?? '';
-    unset($_SESSION['form_values_reservation']);
-}
-
-// Retrieve messages from session and then unset them
-if (isset($_SESSION['success_message_reservation'])) {
-    $success_reservation = $_SESSION['success_message_reservation'];
-    unset($_SESSION['success_message_reservation']);
-}
-if (isset($_SESSION['error_message_reservation'])) {
-    $error_reservation = $_SESSION['error_message_reservation'];
-    unset($_SESSION['error_message_reservation']);
-}
-if (isset($_SESSION['success_message_survey'])) {
-    $success_survey = $_SESSION['success_message_survey'];
-    unset($_SESSION['success_message_survey']);
-}
-if (isset($_SESSION['error_message_survey'])) {
-    $error_survey = $_SESSION['error_message_survey'];
-    unset($_SESSION['error_message_survey']);
 }
 ?>
 
@@ -247,390 +154,517 @@ if (isset($_SESSION['error_message_survey'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($page_title); ?> - CCS SIT-IN MONITORING SYSTEM</title>
+    <title><?php echo $page_title; ?> - CCS SIT Monitoring System</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { sans: ['Poppins', 'sans-serif'], },
-                    colors: {
-                        'custom-purple': '#6D28D9', 'custom-indigo': '#4F46E5',
-                        'light-bg': '#F1E6EF', 'card-bg': '#FFFFFF', 'nav-bg': '#FFFFFF',
-                        'text-primary': '#1F2937', 'text-secondary': '#6B7280',
-                        'accent-red': '#EF4444', 'accent-green': '#10B981', 'accent-blue': '#3B82F6',
-                        'accent-yellow': '#F59E0B',
-                        'input-bg': '#F9FAFB', 'input-border': '#D1D5DB',
-                    }
+                    fontFamily: {
+                        sans: ['Poppins', 'sans-serif'],
+                    },
                 },
             },
         }
     </script>
     <style>
-        body {background-color: #F1E6EF; padding-top: 76px; }
-        .main-content-area { padding: 2rem 1rem; }
-        @media (min-width: 768px) { .main-content-area { padding: 2rem; } }
-        @media (min-width: 1024px) { .main-content-area { padding: 3rem 4rem; } }
-        .nav-dropdown a:hover { background-color: theme('colors.purple.50'); color: theme('colors.custom-purple'); }
-        .nav-dropdown { z-index: 20; }
-        .input-field { background-color: theme('colors.input-bg'); border-color: theme('colors.input-border'); color: theme('colors.text-primary'); }
-        .input-field:focus, .select-field:focus { outline: none; border-color: theme('colors.custom-purple'); box-shadow: 0 0 0 2px theme('colors.custom-purple'), 0 0 0 4px rgba(109, 40, 217, 0.2); }
-        .form-label { color: theme('colors.text-primary'); font-weight: 500; }
-        .pc-card { transition: all 0.2s ease; cursor: pointer; border: 2px solid transparent; }
-        .pc-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        .pc-card.selected { border-color: theme('colors.custom-indigo'); background-color: theme('colors.indigo.50');}
-        .pc-card.unavailable { background-color: theme('colors.slate.200'); color: theme('colors.slate.500'); cursor: not-allowed; opacity: 0.7; }
-        .star-rating { display: flex; flex-direction: row-reverse; justify-content: center; }
-        .star-rating input[type="radio"] { display: none; }
-        .star-rating label { font-size: 2.5rem; color: #E0E0E0; cursor: pointer; transition: color 0.2s; padding: 0 0.2rem;}
-        .star-rating input[type="radio"]:checked ~ label, .star-rating label:hover, .star-rating label:hover ~ label { color: #FFD700; }
-        .animate-fade-in-scale { animation: fadeInScale 0.3s ease-out forwards; }
-        @keyframes fadeInScale {
-            0% { opacity: 0; transform: scale(0.95); }
-            100% { opacity: 1; transform: scale(1); }
+        body {
+            background-color: #F1E6EF;
+        }
+        .main-content-cont {
+            padding: 8rem 15rem 5rem 15rem;
+        }
+        .sidebar-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #1e293b;
+        }
+        .sidebar-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .sidebar-scroll::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .sidebar-scroll::-webkit-scrollbar-thumb {
+            background-color: #4b5563;
+            border-radius: 3px;
+        }
+        .pc-card {
+            transition: all 0.2s ease;
+        }
+        .pc-card:hover {
+            transform: translateY(-2px);
+        }
+        .status-available {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        .status-used {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        .status-maintenance {
+            background-color: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+        .star-rating {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .star-rating input {
+            display: none;
+        }
+        .star-rating label {
+            font-size: 30px;
+            color: #ccc;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .star-rating input:checked ~ label {
+            color: #ffc107;
+        }
+        .star-rating label:hover,
+        .star-rating label:hover ~ label {
+            color: #ffc107;
         }
     </style>
 </head>
-<body class="font-sans antialiased">
-
-    <!-- Top Navigation Bar for Student -->
+<body class="font-sans text-black">
+<!-- Top Navigation Bar -->
 <div class="fixed top-0 left-0 right-0 bg-white shadow-md z-50">
-  <div class="flex items-center justify-between px-6 py-3">
-    <!-- CCS Logo -->
-    <div class="flex items-center">
-      <img src="images/CCS.png" alt="CCS Logo" class="h-14">
-    </div>
-
-    <!-- Main Navigation Links -->
-    <nav class="hidden md:flex items-center space-x-2">
-      <a href="student_dashboard.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
-        Dashboard
-      </a>
-
-    <!-- Rules Dropdown -->
-    <div class="relative">
-        <button onclick="toggleDropdown('rulesDropdownStudent')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
-            Rules <i class="fas fa-chevron-down ml-1 text-xs"></i>
-        </button>
-        <div id="rulesDropdownStudent" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-xl py-1 hidden">
-            <a href="sit-in-rules.php" class="block px-4 py-2 text-sm text-text-secondary">Sit-in Rules</a>
-            <a href="lab-rules.php" class="block px-4 py-2 text-sm text-text-secondary">Lab Rules</a>
+    <div class="flex items-center justify-between px-6 py-3">
+        <!-- CCS Logo -->
+        <div class="flex items-center">
+            <img src="images/CCS.png" alt="CCS Logo" class="h-14">
         </div>
-    </div>
 
-    <!-- Sit-ins Dropdown -->
-    <div class="relative">
-        <button onclick="toggleDropdown('sitInsDropdownStudent')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
-          Sit-ins <i class="fas fa-chevron-down ml-1 text-xs"></i>
-        </button>
-        <div id="sitInsDropdownStudent" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-xl py-1 hidden">
-          <a href="reservation.php" class="block px-4 py-2 text-sm text-text-secondary">Reservation</a>
-          <a href="sit_in_history.php" class="block px-4 py-2 text-sm text-text-secondary">History</a>
-        </div>
-    </div>
-
-    <!-- Resources Dropdown -->
-    <div class="relative">
-        <button onclick="toggleDropdown('resourcesDropdownStudent')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
-          Resources <i class="fas fa-chevron-down ml-1 text-xs"></i>
-        </button>
-        <div id="resourcesDropdownStudent" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-xl py-1 hidden">
-          <a href="upload_resources.php" class="block px-4 py-2 text-sm text-text-secondary">View Resources</a>
-          <a href="student_leaderboard.php" class="block px-4 py-2 text-sm text-text-secondary">Leaderboard</a>
-          <a href="student_lab_schedule.php" class="block px-4 py-2 text-sm text-text-secondary">Lab Schedule</a>
-        </div>
-    </div>
-
-      <!-- Announcements -->
-      <a href="announcements.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
-        Announcements
-      </a>
-
-      <!-- Edit Profile -->
-      <a href="edit-profile.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
-        Edit Profile
-      </a>
-    </nav>
-
-    <!-- User Avatar and Logout -->
-    <div class="flex items-center space-x-4">
-      <!-- Avatar -->
-      <div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center">
-                <img src="uploads/<?php echo htmlspecialchars(!empty($profile_picture_nav) ? $profile_picture_nav : 'default_avatar.jpg'); ?>" 
-                     alt="User Avatar" 
-                     class="w-10 h-10 rounded-full object-cover border-2 border-custom-purple"
-                     onerror="this.src='assets/default_avatar.png'">
-      </div>
-      <h2 class="px-4 py-2 text-gray-700 font-bold"><?php echo htmlspecialchars($firstname); ?></h2>
-
-      <!-- Logout -->
-        <div class="ml-4">
-            
-            <a href="logout.php" class="flex items-center px-4 py-2 bg-purple-600 text-white rounded-full border-2 border-purple-700 hover:bg-purple-700 transition-all duration-200 shadow-md">
-            <i class="fas fa-sign-out-alt mr-2"></i>
-            <span class="hidden md:inline">Log Out</span>
+        <!-- Main Navigation Links -->
+        <nav class="hidden md:flex items-center space-x-2">
+            <a href="student_dashboard.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                Dashboard
             </a>
+
+            <!-- Rules Dropdown -->
+            <div class="relative">
+                <button onclick="toggleDropdown('rulesDropdownStudent')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                    Rules <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                </button>
+                <div id="rulesDropdownStudent" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-xl py-1 hidden">
+                    <a href="sit-in-rules.php" class="block px-4 py-2 text-sm text-text-secondary">Sit-in Rules</a>
+                    <a href="lab-rules.php" class="block px-4 py-2 text-sm text-text-secondary">Lab Rules</a>
+                </div>
+            </div>
+
+            <!-- Sit-ins Dropdown -->
+            <div class="relative">
+                <button onclick="toggleDropdown('sitInsDropdownStudent')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                    Sit-ins <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                </button>
+                <div id="sitInsDropdownStudent" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-xl py-1 hidden">
+                    <a href="reservation.php" class="block px-4 py-2 text-sm text-text-secondary">Reservation</a>
+                    <a href="sit_in_history.php" class="block px-4 py-2 text-sm text-text-secondary">History</a>
+                </div>
+            </div>
+
+            <!-- Resources Dropdown -->
+            <div class="relative">
+                <button onclick="toggleDropdown('resourcesDropdownStudent')" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                    Resources <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                </button>
+                <div id="resourcesDropdownStudent" class="nav-dropdown absolute left-0 mt-2 w-48 bg-white rounded-md shadow-xl py-1 hidden">
+                    <a href="upload_resources.php" class="block px-4 py-2 text-sm text-text-secondary">View Resources</a>
+                    <a href="student_leaderboard.php" class="block px-4 py-2 text-sm text-text-secondary">Leaderboard</a>
+                    <a href="student_lab_schedule.php" class="block px-4 py-2 text-sm text-text-secondary">Lab Schedule</a>
+                </div>
+            </div>
+
+            <!-- Announcements -->
+            <a href="announcements.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                Announcements
+            </a>
+
+            <!-- Edit Profile -->
+            <a href="edit-profile.php" class="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-md transition-all duration-200">
+                Edit Profile
+            </a>
+        </nav>
+
+        <!-- User and Notification Controls -->
+        <div class="flex gap-4 ml-4">
+            <!-- Notification Button -->
+            <div class="relative">
+                <button id="notificationButton" class="relative p-2 text-light hover:text-secondary rounded-full transition-all duration-200 focus:outline-none">
+                    <i class="fas fa-bell text-lg text-purple-500"></i>
+                    <span class="notification-badge hidden">0</span>
+                </button>
+
+                <!-- Notification Dropdown -->
+                <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-secondary/20 z-50 overflow-hidden">
+                    <div class="p-3 bg-purple-500 text-white flex justify-between items-center">
+                        <span class="font-semibold">Notifications</span>
+                        <button id="markAllRead" class="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-all">
+                            <i class="fas fa-check text-xl"></i>
+                        </button>
+                    </div>
+                    <div id="notificationList" class="max-h-80 overflow-y-auto">
+                        <div class="p-4 text-center text-gray-500">No notifications</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Avatar and Logout -->
+            <div class="flex items-center space-x-4">
+  
+                <h2 class="px-4 py-2 text-gray-700 font-bold"><?php echo htmlspecialchars($firstname); ?></h2>
+
+                <!-- Logout -->
+                <div class="ml-4">
+                    <a href="logout.php" onclick="return confirm('Are you sure you want to log out?')" class="flex items-center px-4 py-2 bg-purple-600 text-white rounded-full border-2 border-purple-700 hover:bg-purple-700 transition-all duration-200 shadow-md">
+                        <i class="fas fa-sign-out-alt mr-2"></i>
+                        <span class="hidden md:inline">Log Out</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- User Profile Dropdown (Placeholder for future) -->
+            <div class="relative">
+                <button id="userMenuButton" class="flex items-center gap-2 group focus:outline-none"></button>
+            </div>
+        </div>
+
+        <!-- Mobile menu button -->
+        <div class="mobile-menu md:hidden flex items-center">
+            <button id="mobileMenuButton" class="text-light hover:text-secondary focus:outline-none">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
         </div>
     </div>
-  </div>
+
+    <!-- Mobile Menu (hidden by default) -->
+    <div id="mobileMenu" class="hidden md:hidden bg-primary">
+        <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            <a href="student_dashboard.php" class="block px-3 py-2 rounded-md text-base font-medium text-light hover:bg-primary/20">Profile</a>
+            <a href="edit-profile.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Edit Profile</a>
+            <a href="announcements.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Announcements</a>
+            <a href="reservation.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Reservation</a>
+            <a href="sit_in_history.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Sit-in History</a>
+            <a href="student_leaderboard.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Leaderboard</a>
+            <a href="sit-in-rules.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Sit-in Rules</a>
+            <a href="lab-rules.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Lab Rules</a>
+            <a href="upload_resources.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Lab Resources</a>
+            <a href="student_lab_schedule.php" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Lab Schedule</a>
+            <a href="logout.php" onclick="return confirm('Are you sure you want to log out?')" class="block px-3 py-2 rounded-md text-base font-medium text-secondary hover:bg-primary/20">Log Out</a>
+        </div>
+    </div>
 </div>
 
-    <!-- Main Content Area -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 main-content-area">
-        <div class="bg-card-bg p-6 sm:p-8 rounded-xl shadow-2xl">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 pb-4 border-b border-gray-200">
-                <div class="flex items-center mb-4 sm:mb-0">
-                    <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-custom-indigo/10 flex items-center justify-center text-custom-indigo mr-4">
-                        <i class="fas fa-calendar-alt text-2xl page-header-icon"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-2xl sm:text-3xl font-bold text-text-primary"><?php echo htmlspecialchars($page_title); ?></h1>
-                        <p class="text-sm text-text-secondary mt-1">Book your lab sessions in advance.</p>
-                    </div>
-                </div>
-                <div class="text-sm text-text-secondary">
-                    Remaining Sessions: <span class="font-semibold text-custom-purple"><?php echo $remaining_sessions; ?></span> / 30
-                </div>
-            </div>
-
-            <!-- Messages -->
-            <?php if (!empty($error_reservation)): ?>
-                <div class="bg-red-50 border-l-4 border-accent-red text-accent-red p-4 mb-6 rounded-md" role="alert">
-                    <div class="flex"><div class="py-1"><i class="fas fa-times-circle mr-3"></i></div>
-                    <div><p class="font-bold">Reservation Failed</p><p class="text-sm"><?php echo $error_reservation; ?></p></div></div>
-                </div>
-            <?php endif; ?>
-            <?php if (!empty($success_reservation)): ?>
-                 <div class="bg-green-50 border-l-4 border-accent-green text-accent-green p-4 mb-6 rounded-md" role="alert">
-                    <div class="flex"><div class="py-1"><i class="fas fa-check-circle mr-3"></i></div>
-                    <div><p class="font-bold">Success!</p><p class="text-sm"><?php echo $success_reservation; ?></p></div></div>
-                </div>
-            <?php endif; ?>
-            <?php if (!empty($error_survey)): ?>
-                <div class="bg-red-50 border-l-4 border-accent-red text-accent-red p-4 mb-6 rounded-md" role="alert">
-                    <div class="flex"><div class="py-1"><i class="fas fa-times-circle mr-3"></i></div>
-                    <div><p class="font-bold">Survey Error</p><p class="text-sm"><?php echo $error_survey; ?></p></div></div>
-                </div>
-            <?php endif; ?>
-             <?php if (!empty($success_survey)): ?>
-                 <div class="bg-green-50 border-l-4 border-accent-green text-accent-green p-4 mb-6 rounded-md" role="alert">
-                    <div class="flex"><div class="py-1"><i class="fas fa-check-circle mr-3"></i></div>
-                    <div><p class="font-bold">Survey Submitted!</p><p class="text-sm"><?php echo $success_survey; ?></p></div></div>
-                </div>
-            <?php endif; ?>
-
-
-            <!-- Main Content Grid -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <!-- Reservation Form Column -->
-                <div class="lg:col-span-2 bg-gray-50 p-6 rounded-lg border border-gray-200">
-                    <h3 class="text-xl font-semibold mb-1 text-text-primary">Create New Reservation</h3>
-                    <p class="text-sm text-text-secondary mb-6">Fields marked with <span class="text-accent-red">*</span> are required.</p>
-
-                    <?php if ($pending_reservations > 0): ?>
-                        <div class="bg-yellow-50 border-l-4 border-accent-yellow text-yellow-700 p-4 rounded-md">
-                            <div class="flex"><div class="py-1"><i class="fas fa-info-circle mr-3"></i></div>
-                            <div><p class="font-bold">Pending Reservation</p><p class="text-sm">You already have a reservation pending approval. Please wait for it to be processed.</p></div></div>
-                        </div>
-                    <?php elseif ($total_sitins >= 10 && !$survey_completed): ?>
-                        <div class="bg-blue-50 border-l-4 border-accent-blue text-accent-blue p-4 rounded-md text-center">
-                             <div class="flex mb-2"><div class="py-1"><i class="fas fa-poll mr-3 text-xl"></i></div>
-                            <div><p class="font-bold">Survey Required</p><p class="text-sm">Please complete the satisfaction survey to make new reservations.</p></div></div>
-                            <button onclick="showSurveyModal()" class="mt-2 inline-flex items-center justify-center px-5 py-2.5 bg-gradient-to-r from-custom-purple to-custom-indigo text-white font-medium rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md text-sm">
-                                <i class="fas fa-clipboard-check mr-2"></i> Complete Survey Now
-                            </button>
-                        </div>
-                    <?php elseif ($remaining_sessions <= 0): ?>
-                         <div class="bg-orange-50 border-l-4 border-orange-500 text-orange-700 p-4 rounded-md">
-                            <div class="flex"><div class="py-1"><i class="fas fa-hourglass-end mr-3"></i></div>
-                            <div><p class="font-bold">No Sessions Left</p><p class="text-sm">You have used all your available sit-in sessions for this week.</p></div></div>
-                        </div>
-                    <?php else: ?>
-                        <form method="POST" action="reservation.php" class="space-y-5">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                <div>
-                                    <label for="studentIdDisplay" class="block text-sm form-label">Student ID</label>
-                                    <input type="text" id="studentIdDisplay" value="<?php echo htmlspecialchars($idno_session); ?>" readonly class="mt-1 block w-full px-3 py-2.5 bg-gray-200 text-gray-500 rounded-md shadow-sm sm:text-sm border-gray-300 cursor-not-allowed">
-                                </div>
-                                <div>
-                                    <label for="studentNameDisplay" class="block text-sm form-label">Name</label>
-                                    <input type="text" id="studentNameDisplay" value="<?php echo htmlspecialchars($firstname . ' ' . $lastname); ?>" readonly class="mt-1 block w-full px-3 py-2.5 bg-gray-200 text-gray-500 rounded-md shadow-sm sm:text-sm border-gray-300 cursor-not-allowed">
-                                </div>
-                            </div>
-                            <div>
-                                <label for="purpose" class="block text-sm form-label">Purpose <span class="text-accent-red">*</span></label>
-                                <select id="purpose" name="purpose" required class="mt-1 block w-full px-3 py-2.5 input-field select-field rounded-md shadow-sm sm:text-sm transition-all">
-                                    <option value="" <?php echo ($form_purpose == '') ? 'selected' : ''; ?> disabled>Select Purpose</option>
-                                    <option value="C Programming" <?php echo ($form_purpose == 'C Programming') ? 'selected' : ''; ?>>C Programming</option>
-                                    <option value="Java Programming" <?php echo ($form_purpose == 'Java Programming') ? 'selected' : ''; ?>>Java Programming</option>
-                                    <option value="C# Programming" <?php echo ($form_purpose == 'C# Programming') ? 'selected' : ''; ?>>C# Programming</option>
-                                    <option value="Systems Integration & Architecture" <?php echo ($form_purpose == 'Systems Integration & Architecture') ? 'selected' : ''; ?>>Systems Integration & Architecture</option>
-                                     <option value="Embedded Systems & IoT" <?php echo ($form_purpose == 'Embedded Systems & IoT') ? 'selected' : ''; ?>>Embedded Systems & IoT</option>
-                                    <option value="Computer Application" <?php echo ($form_purpose == 'Computer Application') ? 'selected' : ''; ?>>Computer Application</option>
-                                    <option value="Database" <?php echo ($form_purpose == 'Database') ? 'selected' : ''; ?>>Database</option>
-                                    <option value="Project Management" <?php echo ($form_purpose == 'Project Management') ? 'selected' : ''; ?>>Project Management</option>
-                                    <option value="Python Programming" <?php echo ($form_purpose == 'Python Programming') ? 'selected' : ''; ?>>Python Programming</option>
-                                    <option value="Mobile Application" <?php echo ($form_purpose == 'Mobile Application') ? 'selected' : ''; ?>>Mobile Application</option>
-                                    <option value="Web Design" <?php echo ($form_purpose == 'Web Design') ? 'selected' : ''; ?>>Web Design</option>
-                                    <option value="Php Programming" <?php echo ($form_purpose == 'Php Programming') ? 'selected' : ''; ?>>Php Programming</option>
-                                    <option value="Other" <?php echo ($form_purpose == 'Other') ? 'selected' : ''; ?>>Other</option>
-                                </select>
-                            </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                <div>
-                                    <label for="lab_room" class="block text-sm form-label">Laboratory Room <span class="text-accent-red">*</span></label>
-                                    <select id="lab_room" name="lab_room" required class="mt-1 block w-full px-3 py-2.5 input-field select-field rounded-md shadow-sm sm:text-sm transition-all" onchange="updatePcAvailability()">
-                                        <option value="" <?php echo ($form_lab_room == '') ? 'selected' : ''; ?> disabled>Select Lab</option>
-                                        <?php foreach ($labs as $lab_option): ?>
-                                            <option value="<?php echo $lab_option; ?>" <?php echo ($form_lab_room == $lab_option) ? 'selected' : ''; ?>>
-                                                <?php echo $lab_option; ?> 
-                                                (<?php echo $lab_pcs_summary[$lab_option]['available']; ?> Available)
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div id="pcSelectionContainer" class="hidden">
-                                    <label for="pc_number_display" class="block text-sm form-label">Select PC (Optional)</label>
-                                    <div id="pcGrid" class="mt-1 grid grid-cols-3 sm:grid-cols-4 gap-2 p-3 bg-input-bg border border-input-border rounded-md max-h-32 overflow-y-auto">
-                                    </div>
-                                    <input type="hidden" name="pc_number" id="selectedPcInput" value="<?php echo htmlspecialchars($form_pc_number); ?>">
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                <div>
-                                    <label for="reservation_date" class="block text-sm form-label">Date <span class="text-accent-red">*</span></label>
-                                    <input type="date" id="reservation_date" name="reservation_date" min="<?php echo date('Y-m-d'); ?>" value="<?php echo htmlspecialchars($form_reservation_date); ?>" required 
-                                           class="mt-1 block w-full px-3 py-2.5 input-field rounded-md shadow-sm sm:text-sm transition-all">
-                                </div>
-                                <div>
-                                    <label for="time_in" class="block text-sm form-label">Time In <span class="text-accent-red">*</span></label>
-                                    <input type="time" id="time_in" name="time_in" value="<?php echo htmlspecialchars($form_time_in); ?>" required 
-                                           class="mt-1 block w-full px-3 py-2.5 input-field rounded-md shadow-sm sm:text-sm transition-all">
-                                </div>
-                            </div>
-                            <div class="pt-2">
-                                <button type="submit" name="submit_reservation"
-                                        class="w-full flex items-center justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-custom-purple to-custom-indigo hover:from-purple-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-custom-indigo transition-all duration-200 shadow-md">
-                                    <i class="fas fa-calendar-plus mr-2"></i> Submit Reservation
-                                </button>
-                            </div>
-                        </form>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Reservation History Column -->
-                <div class="lg:col-span-1 bg-gray-50 p-6 rounded-lg border border-gray-200">
-                    <h3 class="text-xl font-semibold mb-4 text-text-primary">Your Reservation History</h3>
-                    <div class="max-h-96 overflow-y-auto space-y-3">
-                        <?php
-                        $reservations_hist_stmt = $conn->prepare("SELECT id, reservation_date, lab_room, pc_number, time_in, status FROM reservations WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"); // Show recent 10
-                        if ($reservations_hist_stmt) {
-                            $reservations_hist_stmt->bind_param("i", $student_id);
-                            $reservations_hist_stmt->execute();
-                            $result_hist = $reservations_hist_stmt->get_result();
-                            
-                            if ($result_hist->num_rows > 0) {
-                                while ($row_hist = $result_hist->fetch_assoc()) {
-                                    $status_class = '';
-                                    $status_icon = '';
-                                    switch (strtolower($row_hist['status'])) {
-                                        case 'approved': $status_class = 'bg-green-100 text-accent-green'; $status_icon = 'fas fa-check-circle'; break;
-                                        case 'disapproved': $status_class = 'bg-red-100 text-accent-red'; $status_icon = 'fas fa-times-circle'; break;
-                                        case 'pending': $status_class = 'bg-yellow-100 text-accent-yellow'; $status_icon = 'fas fa-hourglass-half'; break;
-                                        default: $status_class = 'bg-gray-100 text-gray-500'; $status_icon = 'fas fa-question-circle';
-                                    }
-                                    echo "<div class='p-3 border border-gray-200 rounded-md bg-white shadow-sm'>";
-                                    echo "<div class='flex justify-between items-center mb-1'>";
-                                    echo "<p class='text-sm font-medium text-text-primary'>" . htmlspecialchars($row_hist['lab_room']) . ($row_hist['pc_number'] ? " - PC " . htmlspecialchars($row_hist['pc_number']) : "") . "</p>";
-                                    echo "<span class='px-2 py-0.5 text-xs font-semibold rounded-full " . $status_class . "'><i class='" . $status_icon . " mr-1'></i>" . ucfirst(htmlspecialchars($row_hist['status'])) . "</span>";
-                                    echo "</div>";
-                                    echo "<p class='text-xs text-text-secondary'>" . (new DateTime($row_hist['reservation_date']))->format('M d, Y') . " at " . (new DateTime('1970-01-01 ' . $row_hist['time_in']))->format('h:i A') . "</p>";
-                                    echo "</div>";
-                                }
-                            } else {
-                                echo "<p class='text-sm text-text-secondary text-center py-4'>No reservation history found.</p>";
-                            }
-                            $reservations_hist_stmt->close();
-                        } else {
-                             echo "<p class='text-sm text-red-500 text-center py-4'>Error loading reservation history.</p>";
-                             error_log("Error preparing reservation history query: " . $conn->error);
-                        }
-                        ?>
-                    </div>
-                    <?php if ($result_hist && $result_hist->num_rows > 0) : ?>
-                    <div class="mt-4 text-center">
-                        <a href="sit_in_history.php#reservations" class="text-sm font-medium text-custom-purple hover:text-custom-indigo hover:underline">View All Reservations</a>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Satisfaction Survey Modal -->
+<!-- Main Content -->
+    <div class="min-h-screen bg-purple-100 main-content-cont">
+    <!-- Satisfaction Survey Modal (shown only if needed) -->
     <?php if ($total_sitins >= 10 && !$survey_completed): ?>
-    <div id="surveyModalContainer" class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in-scale">
-        <div class="bg-card-bg rounded-xl shadow-2xl p-6 sm:p-8 w-full max-w-lg mx-4 relative">
-            <h3 class="text-2xl font-semibold mb-2 text-text-primary text-center">Sit-in Experience Survey</h3>
-            <p class="text-text-secondary mb-6 text-center text-sm">Your feedback is valuable! Please rate your overall experience after completing 10 sit-in sessions.</p>
+    <div id="surveyModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-6 w-full max-w-md relative">
+            <!-- Close button -->
+            <button onclick="document.getElementById('surveyModal').classList.add('hidden')" 
+                    class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors duration-200">
+                <i class="fas fa-times"></i>
+            </button>
             
-            <form method="POST" action="reservation.php" class="space-y-6">
-                <div>
-                    <p class="text-center form-label mb-2">Overall Satisfaction:</p>
-                    <div class="star-rating">
-                        <input type="radio" id="star5" name="satisfaction" value="5" required /><label for="star5" title="5 stars">★</label>
-                        <input type="radio" id="star4" name="satisfaction" value="4" /><label for="star4" title="4 stars">★</label>
-                        <input type="radio" id="star3" name="satisfaction" value="3" /><label for="star3" title="3 stars">★</label>
-                        <input type="radio" id="star2" name="satisfaction" value="2" /><label for="star2" title="2 stars">★</label>
-                        <input type="radio" id="star1" name="satisfaction" value="1" /><label for="star1" title="1 star">★</label>
+            <h3 class="text-xl font-medium mb-4 text-gray-800 text-center">Sit-in Experience Survey</h3>
+            <p class="text-gray-500 mb-6 text-center">Please take a moment to share your experience after completing 10 sit-in sessions.</p>
+            
+            <form method="POST" class="space-y-4">
+                <div class="text-center">
+                    <p class="text-gray-500 mb-2">How satisfied are you with your sit-in experience?</p>
+                    <div class="star-rating text-yellow-400 text-2xl">
+                        <input type="radio" id="star5" name="satisfaction" value="5" required />
+                        <label for="star5" title="5 stars">★</label>
+                        <input type="radio" id="star4" name="satisfaction" value="4" />
+                        <label for="star4" title="4 stars">★</label>
+                        <input type="radio" id="star3" name="satisfaction" value="3" />
+                        <label for="star3" title="3 stars">★</label>
+                        <input type="radio" id="star2" name="satisfaction" value="2" />
+                        <label for="star2" title="2 stars">★</label>
+                        <input type="radio" id="star1" name="satisfaction" value="1" />
+                        <label for="star1" title="1 star">★</label>
                     </div>
                 </div>
                 
                 <div>
-                    <label for="comments" class="block text-sm form-label mb-1">Comments & Suggestions (Optional)</label>
-                    <textarea name="comments" id="comments" rows="4" class="w-full px-3 py-2.5 input-field select-field rounded-md shadow-sm sm:text-sm transition-all" placeholder="Tell us more about your experience or how we can improve..."></textarea>
+                    <label class="block text-sm font-medium text-gray-500 mb-1">Comments (optional)</label>
+                    <textarea name="comments" rows="3" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200" placeholder="Any suggestions or feedback..."></textarea>
                 </div>
                 
-                <div class="pt-2 flex flex-col sm:flex-row sm:justify-end sm:space-x-3 space-y-2 sm:space-y-0">
-                     <button type="button" onclick="closeSurveyModal()" 
-                            class="w-full sm:w-auto order-2 sm:order-1 px-5 py-2.5 border border-input-border text-sm font-medium rounded-md text-text-secondary hover:bg-gray-100 transition-all">
-                        Maybe Later
-                    </button>
-                    <button type="submit" name="submit_survey" 
-                            class="w-full sm:w-auto order-1 sm:order-2 flex items-center justify-center px-5 py-2.5 bg-gradient-to-r from-custom-purple to-custom-indigo text-white font-medium rounded-md hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md text-sm">
-                        <i class="fas fa-paper-plane mr-2"></i> Submit Survey
+                <div class="pt-2">
+                    <button type="submit" name="submit_survey" class="w-full flex items-center justify-center p-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 shadow-sm">
+                        <i class="fa-solid fa-check mr-2"></i> Submit Survey
                     </button>
                 </div>
             </form>
         </div>
     </div>
-    <script>
-        function showSurveyModal() {
-            const modalContainer = document.getElementById('surveyModalContainer');
-            if (modalContainer) modalContainer.classList.remove('hidden');
-        }
-        function closeSurveyModal() {
-            const modalContainer = document.getElementById('surveyModalContainer');
-            if (modalContainer) modalContainer.classList.add('hidden');
-        }
-        <?php if ($total_sitins >= 10 && !$survey_completed && !isset($_POST['submit_survey'])): // Auto-show if not just submitted ?>
-        window.addEventListener('load', () => {
-             // Don't auto-show if there was an error trying to submit it
-            <?php if (empty($error_survey)): ?>
-                showSurveyModal();
-            <?php endif; ?>
-        });
-        <?php endif; ?>
-    </script>
     <?php endif; ?>
 
+    <!-- Page Header -->
+    <div class="mb-8">
+        <h2 class="text-3xl font-medium text-gray-800 tracking-tight">Lab Reservation</h2>
+        <p class="text-gray-500 font-light">Book your lab sessions in advance</p>
+        <div class="w-16 h-1 bg-gradient-to-r from-purple-400 to-indigo-500 mt-4 rounded-full"></div>
+    </div>
+    
+    <!-- Display error/success messages -->
+    <?php if ($error): ?>
+        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded mb-6">
+            <div class="flex items-center">
+                <i class="fas fa-exclamation-circle mr-2"></i>
+                <p><?php echo $error; ?></p>
+            </div>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-6">
+            <div class="flex items-center">
+                <i class="fas fa-check-circle mr-2"></i>
+                <p><?php echo $success; ?></p>
+            </div>
+        </div>
+    <?php endif; ?>
+    
+    <!-- Survey reminder -->
+    <?php if ($total_sitins >= 10 && !$survey_completed): ?>
+        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded mb-6">
+            <div class="flex items-center">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                <span>Please complete the satisfaction survey to continue making reservations.</span>
+            </div>
+        </div>
+    <?php endif; ?>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Reservation Form -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-xs p-8 hover:shadow-sm transition-all duration-300">
+            <div class="mb-6">
+                <div class="flex items-center mb-3">
+                    <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 mr-3">
+                        <i class="fas fa-calendar-plus text-sm"></i>
+                    </div>
+                    <h3 class="text-xl font-medium text-gray-800 tracking-tight">New Reservation</h3>
+                </div>
+                <p class="text-gray-500 font-light pl-11">Fill out the form to book a lab session</p>
+            </div>
+            
 
-    <script>
-        // Dropdown toggle functions
+            <?php if ($total_sitins >= 10 && !$survey_completed): ?>
+                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded mb-6 text-center">
+                    <button onclick="document.getElementById('surveyModal').classList.remove('hidden')" class="w-full flex items-center justify-center p-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm">
+                        <i class="fas fa-clipboard-check mr-2"></i> Complete Survey to Reserve
+                    </button>
+                </div>
+            <?php else: ?>
+                <form method="POST" class="space-y-4">
+                    <!-- Student Info (readonly) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Student ID</label>
+                        <input type="text" value="<?php echo htmlspecialchars($idno); ?>" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700" readonly>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Name</label>
+                        <input type="text" value="<?php echo htmlspecialchars($firstname . ' ' . $lastname); ?>" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700" readonly>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Remaining Sessions</label>
+                        <input type="text" value="<?php echo htmlspecialchars($remaining_sessions); ?>" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700" readonly>
+                    </div>
+                    
+                    <!-- Editable fields -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Purpose *</label>
+                        <select name="purpose" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200" required>
+                            <option value="">Select Purpose</option>
+                            <option value="C Programming" <?php echo (isset($purpose) && $purpose == 'C Programming' ? 'selected' : ''); ?>>C Programming</option>
+                            <option value="Java Programming" <?php echo (isset($purpose) && $purpose == 'Java Programming' ? 'selected' : ''); ?>>Java Programming</option>
+                            <option value="C# Programming" <?php echo (isset($purpose) && $purpose == 'C# Programming' ? 'selected' : ''); ?>>C# Programming</option>
+                            <option value="Systems Integration & Architecture" <?php echo (isset($purpose) && $purpose == 'Systems Integration & Architecture' ? 'selected' : ''); ?>>Systems Integration & Architecture</option>
+                            <option value="Embedded Systems & IoT" <?php echo (isset($purpose) && $purpose == 'Embedded Systems & IoT' ? 'selected' : ''); ?>>Embedded Systems & IoT</option>
+                            <option value="Computer Application" <?php echo (isset($purpose) && $purpose == 'Computer Application' ? 'selected' : ''); ?>>Computer Application</option>
+                            <option value="Database" <?php echo (isset($purpose) && $purpose == 'Database' ? 'selected' : ''); ?>>Database</option>
+                            <option value="Project Management" <?php echo (isset($purpose) && $purpose == 'Project Management' ? 'selected' : ''); ?>>Project Management</option>
+                            <option value="Python Programming" <?php echo (isset($purpose) && $purpose == 'Python Programming' ? 'selected' : ''); ?>>Python Programming</option>
+                            <option value="Mobile Application" <?php echo (isset($purpose) && $purpose == 'Mobile Application' ? 'selected' : ''); ?>>Mobile Application</option>
+                            <option value="Web Design" <?php echo (isset($purpose) && $purpose == 'Web Design' ? 'selected' : ''); ?>>Web Design</option>
+                            <option value="Php Programming" <?php echo (isset($purpose) && $purpose == 'Php Programming' ? 'selected' : ''); ?>>Php Programming</option>
+                            <option value="Other" <?php echo (isset($purpose) && $purpose == 'Other' ? 'selected' : ''); ?>>Other</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Laboratory Room *</label>
+                        <select name="lab_room" id="lab_room" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200" required onchange="updatePcAvailability()">
+                            <option value="">Select Lab</option>
+                            <?php foreach ($labs as $lab): ?>
+                                <option value="<?php echo $lab; ?>" <?php echo (isset($lab_room) && $lab_room == $lab) ? 'selected' : ''; ?>>
+                                    <?php echo $lab; ?> 
+                                    (<?php echo $lab_pcs[$lab]['available']; ?> available)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <div id="pcSelectionContainer" class="hidden">
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Select PC </label>
+                        <div id="pcGrid" class="grid grid-cols-4 gap-3 mb-3 max-h-40 overflow-y-auto p-3 bg-gray-50 rounded-lg">
+                            <!-- PCs will be loaded here via AJAX -->
+                        </div>
+                        <input type="hidden" name="pc_number" id="selectedPc">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Date *</label>
+                        <input type="date" name="reservation_date" min="<?php echo date('Y-m-d'); ?>" value="<?php echo isset($reservation_date) ? htmlspecialchars($reservation_date) : ''; ?>" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200" required>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-1">Time In *</label>
+                        <input type="time" name="time_in" value="<?php echo isset($time_in) ? htmlspecialchars($time_in) : ''; ?>" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-200" required>
+                    </div>
+                    
+                    <div class="pt-4">
+                        <button type="submit" name="submit" class="w-full flex items-center justify-center p-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 shadow-sm">
+                            <i class="fa-solid fa-paper-plane mr-2"></i> Submit Reservation
+                        </button>
+                    </div>
+                </form>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Reservation History -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-xs p-8 hover:shadow-sm transition-all duration-300">
+            <div class="mb-6">
+                <div class="flex items-center mb-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mr-3">
+                        <i class="fas fa-history text-sm"></i>
+                    </div>
+                    <h3 class="text-xl font-medium text-gray-800 tracking-tight">Your Reservations</h3>
+                </div>
+                <p class="text-gray-500 font-light pl-11">View your reservation history</p>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Date</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Lab</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">PC</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Time</th>
+                            <th class="p-3 text-sm font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        $reservations = $conn->prepare("SELECT reservation_date, lab_room, pc_number, time_in, status FROM reservations WHERE student_id = ? ORDER BY reservation_date DESC, time_in DESC");
+                        $reservations->bind_param("i", $student_id);
+                        $reservations->execute();
+                        $result = $reservations->get_result();
+                        
+                        if ($result->num_rows > 0) {
+                            while ($row = $result->fetch_assoc()) {
+                                $status_color = '';
+                                if ($row['status'] == 'approved') $status_color = 'bg-green-100 text-green-800';
+                                elseif ($row['status'] == 'disapproved') $status_color = 'bg-red-100 text-red-800';
+                                else $status_color = 'bg-yellow-100 text-yellow-800';
+                                
+                                echo "<tr class='border-t border-gray-100 hover:bg-gray-50'>";
+                                echo "<td class='p-3'>" . htmlspecialchars($row['reservation_date']) . "</td>";
+                                echo "<td class='p-3'>" . htmlspecialchars($row['lab_room']) . "</td>";
+                                echo "<td class='p-3'>" . ($row['pc_number'] ? 'PC ' . htmlspecialchars($row['pc_number']) : '-') . "</td>";
+                                echo "<td class='p-3'>" . htmlspecialchars($row['time_in']) . "</td>";
+                                echo "<td class='p-3'><span class='px-2 py-1 text-xs rounded-full $status_color'>" . ucfirst(htmlspecialchars($row['status'])) . "</span></td>";
+                                echo "</tr>";
+                            }
+                        } else {
+                            echo "<tr><td colspan='5' class='p-4 text-center text-gray-500'>No reservations found</td></tr>";
+                        }
+                        
+                        $reservations->close();
+                        ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Function to update PC availability when lab is selected
+    function updatePcAvailability() {
+        const labSelect = document.getElementById('lab_room');
+        const labName = labSelect.value;
+        const pcContainer = document.getElementById('pcSelectionContainer');
+        const pcGrid = document.getElementById('pcGrid');
+        const selectedPc = document.getElementById('selectedPc');
+        
+        if (labName) {
+            // Show loading state
+            pcGrid.innerHTML = '<div class="col-span-4 text-center py-4 text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i> Loading PCs...</div>';
+            pcContainer.classList.remove('hidden');
+            
+            // Load PCs via AJAX
+            fetch(`get_pcs.php?lab=${encodeURIComponent(labName)}`, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.text();
+            })
+            .then(data => {
+                pcGrid.innerHTML = data;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                pcGrid.innerHTML = `
+                    <div class="col-span-4 text-center py-4 text-red-500">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Failed to load PCs. Please try again.
+                    </div>
+                `;
+            });
+        } else {
+            pcContainer.classList.add('hidden');
+            selectedPc.value = '';
+        }
+    }
+    
+    // Function to select a PC
+    function selectPc(pcNumber) {
+        const pcCards = document.querySelectorAll('#pcGrid .pc-card');
+        const selectedPc = document.getElementById('selectedPc');
+        
+        pcCards.forEach(card => {
+            if (parseInt(card.dataset.pcNumber) === pcNumber) {
+                card.classList.add('border-purple-500', 'bg-purple-100');
+                selectedPc.value = pcNumber;
+            } else {
+                card.classList.remove('border-purple-500', 'bg-purple-100');
+            }
+        });
+    }
+
+    // Dropdown toggle functions
 function toggleDropdown(id) {
     const dropdown = document.getElementById(id);
     dropdown.classList.toggle('hidden');
@@ -638,6 +672,10 @@ function toggleDropdown(id) {
     document.querySelectorAll('.nav-dropdown').forEach(el => {
         if (el.id !== id) el.classList.add('hidden');
     });
+}
+
+function toggleMobileDropdown(id) {
+    document.getElementById(id).classList.toggle('hidden');
 }
 
 // Close dropdowns when clicking outside
@@ -662,64 +700,18 @@ document.addEventListener('click', function(event) {
     }
 });
 
-        // PC Availability JS
-        function updatePcAvailability() {
-            const labSelect = document.getElementById('lab_room');
-            const pcContainer = document.getElementById('pcSelectionContainer');
-            const pcGrid = document.getElementById('pcGrid');
-            const selectedPcInput = document.getElementById('selectedPcInput'); // Changed ID
+// Mobile menu toggle
+document.getElementById('mobile-menu-button').addEventListener('click', function() {
+    document.getElementById('mobile-menu').classList.toggle('hidden');
+});
 
-            if (!labSelect || !pcContainer || !pcGrid || !selectedPcInput) return;
-            const labName = labSelect.value;
-            
-            if (labName) {
-                pcGrid.innerHTML = '<div class="col-span-full text-center py-4 text-text-secondary"><i class="fas fa-spinner fa-spin mr-2"></i>Loading PCs...</div>';
-                pcContainer.classList.remove('hidden');
-                
-                fetch(`get_pcs.php?lab=${encodeURIComponent(labName)}`, { headers: {'X-Requested-With': 'XMLHttpRequest'} })
-                .then(response => {
-                    if (!response.ok) throw new Error('Network response was not ok: ' + response.statusText);
-                    return response.text();
-                })
-                .then(data => { pcGrid.innerHTML = data; })
-                .catch(error => {
-                    console.error('Error fetching PCs:', error);
-                    pcGrid.innerHTML = `<div class="col-span-full text-center py-4 text-accent-red"><i class="fas fa-exclamation-triangle mr-2"></i>Failed to load PCs.</div>`;
-                });
-            } else {
-                pcContainer.classList.add('hidden');
-                selectedPcInput.value = '';
-            }
-        }
-        
-        function selectPc(pcNumber, cardElement) {
-            const pcCards = document.querySelectorAll('#pcGrid .pc-card');
-            const selectedPcInput = document.getElementById('selectedPcInput');
-             if (!selectedPcInput) return;
+// Logout confirmation
+function confirmLogout(event) {
+    if (!confirm('Are you sure you want to log out?')) {
+        event.preventDefault();
+    }
+}
+</script>
 
-            // Check if the clicked PC is already selected
-            const isAlreadySelected = cardElement.classList.contains('selected');
-
-            pcCards.forEach(card => card.classList.remove('selected', 'border-custom-indigo', 'bg-indigo-50'));
-            
-            if (isAlreadySelected) {
-                selectedPcInput.value = ''; // Deselect
-            } else {
-                cardElement.classList.add('selected', 'border-custom-indigo', 'bg-indigo-50');
-                selectedPcInput.value = pcNumber;
-            }
-        }
-        // Call on page load if a lab is pre-selected (e.g., due to form resubmission with errors)
-        window.addEventListener('load', () => {
-            if (document.getElementById('lab_room')?.value) {
-                updatePcAvailability();
-            }
-        });
-    </script>
 </body>
 </html>
-<?php
-if (isset($conn)) {
-    $conn->close();
-}
-?>

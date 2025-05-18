@@ -500,11 +500,7 @@ foreach ($labs as $lab) {
                                     </button>
                                 </div>
                             </div>
-                            <div>
-                                <button type="button" onclick="printLabReport('<?php echo $lab; ?>')" class="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-md hover:bg-gray-50 transition-all duration-200 flex items-center">
-                                    <i class="fas fa-print mr-2"></i> Print Report
-                                </button>
-                            </div>
+
                         </div>
                     </form>
                     

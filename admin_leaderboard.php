@@ -445,7 +445,6 @@ document.addEventListener('click', function(event) {
               <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-white/90 uppercase tracking-wider">Date</th>
               <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-white/90 uppercase tracking-wider">Student</th>
               <th scope="col" class="px-6 py-4 text-right text-xs font-semibold text-white/90 uppercase tracking-wider">Points</th>
-              <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-white/90 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-100">
@@ -459,11 +458,6 @@ document.addEventListener('click', function(event) {
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-mono">
                 <span class="<?= ($log['points_earned'] > 0 ? 'text-green-600' : 'text-red-600') ?>">
                   <?= ($log['points_earned'] > 0 ? '+' : '').$log['points_earned'] ?>
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span class="px-3 py-1 inline-flex text-xs leading-5 font-medium rounded-full bg-purple-100 text-purple-800">
-                  <?= ucfirst(str_replace('_', ' ', $log['action'])) ?>
                 </span>
               </td>
             </tr>
